@@ -211,14 +211,14 @@ export const CGPreview = memo(({
     fontFamily: data.font,
     letterSpacing: `${data.letterSpacing}px`,
     fontSize: `${data.size}px`,
-    lineHeight: (isProfileLayout && data.id.includes('title-r')) ? 1.1 : 1.5, // 收緊小標題的行高避免垂直溢出框外
+    lineHeight: data.isVertical ? 1.05 : ((isProfileLayout && data.id.includes('title-r')) ? 1.1 : 1.5),
     zIndex: 2,
     color: textColor,
-    whiteSpace: data.autoWrap ? 'pre-wrap' : 'nowrap',
+    whiteSpace: data.isVertical ? 'pre-wrap' : (data.autoWrap ? 'pre-wrap' : 'nowrap'),
     wordBreak: data.autoWrap ? 'break-word' : 'normal',
-    writingMode: data.isVertical ? 'vertical-rl' : 'horizontal-tb',
+    writingMode: 'horizontal-tb',
     display: 'inline-block',
-    textAlign: data.textAlign || 'left',
+    textAlign: data.isVertical ? 'center' : (data.textAlign || 'left'),
     fontWeight: data.fontWeight || (mode === 'title' ? 900 : 500),
     textShadow: showStroke ? getStrokeShadow(strokeWidth, strokeColor) : 'none',
     padding: 0,
@@ -300,9 +300,9 @@ export const CGPreview = memo(({
                   transform: squeezeScale < 1 ? (data.isVertical ? `scaleY(${squeezeScale})` : `scaleX(${squeezeScale})`) : 'none',
                   transformOrigin: data.isVertical ? 'top center' : 'left center',
                 }} 
-                className={`uppercase tracking-tighter max-w-none whitespace-nowrap ${textHoverClass}`}
+                className={`uppercase tracking-tighter max-w-none ${data.isVertical ? '' : 'whitespace-nowrap'} ${textHoverClass}`}
               >
-                {data.text}
+                {data.isVertical ? [...data.text].join('\n') : data.text}
               </span>
             )}
           </div>

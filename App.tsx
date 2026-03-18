@@ -1153,6 +1153,7 @@ const App: React.FC = () => {
     let decorationAssets: Asset[] = [];
     let imageAssets: Asset[] = [];
     let textAssets: Asset[] = [];
+    let customCombinedAssets: Asset[] | null = null;
 
     const createGroup = (
       index: number,
@@ -1193,7 +1194,18 @@ const App: React.FC = () => {
       // 三框：限制 6 字 (56 * 6 = 336) + 邊距 96 = 432px
       const titleWidth = prefix === "雙框" ? 656 : prefix === "三框" ? 432 : w - 300;
       // 確保齊左縮排起點 (Indent)
-      const titleX = prefix === "雙框" ? x + 152 : prefix === "三框" ? x + 104 : x + 150;
+      let titleX = prefix === "雙框" ? x + 152 : prefix === "三框" ? x + 104 : x + 150;
+      let contentX = x + 150;
+
+      if (prefix === "三框") {
+        if (index === 0) {
+          titleX += 50;
+          contentX += 50;
+        } else if (index === 2) {
+          titleX -= 50;
+          contentX -= 50;
+        }
+      }
 
       let defaultTitle = `${prefix}標題 ${index + 1}`;
       let defaultContent = `${prefix}摘要項目內容`;
@@ -1263,7 +1275,7 @@ const App: React.FC = () => {
         id: `content-${assetUniqueId}`,
         type: "content",
         items: [finalContentText],
-        x: x + 150,
+        x: contentX,
         y: 680,
         scaleX: 1,
         scaleY: 1,
@@ -1340,25 +1352,25 @@ const App: React.FC = () => {
         setupImageIndex: imgIndexRef,
       };
 
-      // 5. 資料來源
+      // 5. 資料來源 (小標題上方，對齊小標題前緣往右5px)
       const sourceAsset: Asset | null = sourceText ? {
         id: `source-${assetUniqueId}`,
-        type: "content",
-        items: [sourceText],
-        x: x + 10,
-        y: 660,
+        type: "title",
+        text: sourceText,
+        x: titleX + 5,
+        y: 545, // 小標題 y:580 的上方
         scaleX: 1,
         scaleY: 1,
-        baseW: w - 20,
-        baseH: 30,
-        opacity: 0.75,
+        baseW: titleWidth - 5,
+        baseH: 32,
+        opacity: 0.8,
         bgOpacity: 0,
         name: `${prefix}資料來源 ${index + 1}`,
         visible: true,
         font: "'Noto Sans TC', sans-serif",
-        size: 23,
+        size: 24,
         theme,
-        width: w - 20,
+        width: titleWidth - 5,
         letterSpacing: 0,
         borderRadius: 0,
         showBackground: false,
@@ -1368,22 +1380,17 @@ const App: React.FC = () => {
         textColor: "white",
         strokeColor: "black",
         fontWeight: 500,
+        autoWrap: false,
+        textAlign: 'left',
       } : null;
 
-      if (sourceAsset) {
-        textAssets.push(sourceAsset);
-      }
-
-      return { topBar, img, title, content };
+      return { topBar, img, title, content, source: sourceAsset };
     };
 
     if (type === "double") {
       const w = 960;
       const g1 = createGroup(0, 0, w, "雙框");
       const g2 = createGroup(1, 960, w, "雙框");
-      decorationAssets = [g1.topBar, g2.topBar];
-      imageAssets = [g1.img, g2.img];
-      textAssets.push(g1.title, g1.content, g2.title, g2.content);
       
       const existingMainTitle = findExisting(`title-main-${baseId}`);
       const mainTitle: Asset = existingMainTitle ? {
@@ -1418,23 +1425,38 @@ const App: React.FC = () => {
         fontWeight: 900,
         isVertical: true, // Mark as vertical text
       };
-      textAssets.push(mainTitle);
+
+      customCombinedAssets = [
+        mainTitle,
+        g1.img,
+        ...(g1.source ? [g1.source] : []),
+        g1.title,
+        g1.content,
+        g2.img,
+        ...(g2.source ? [g2.source] : []),
+        g2.title,
+        g2.content
+      ];
     } else if (type === "triple") {
       const w = 640;
       const g1 = createGroup(0, 0, w, "三框");
       const g2 = createGroup(1, 640, w, "三框");
       const g3 = createGroup(2, 1280, w, "三框");
 
-      decorationAssets.push(g1.topBar, g2.topBar, g3.topBar);
-      imageAssets.push(g1.img, g2.img, g3.img);
-      textAssets.push(
+      customCombinedAssets = [
+        g1.img,
+        ...(g1.source ? [g1.source] : []),
         g1.title,
         g1.content,
+        g2.img,
+        ...(g2.source ? [g2.source] : []),
         g2.title,
         g2.content,
+        g3.img,
+        ...(g3.source ? [g3.source] : []),
         g3.title,
-        g3.content,
-      );
+        g3.content
+      ];
     } else if (type === "profile" || type === "pullout") {
       const w = 960; // 1920 / 2
       const prefix = type === "profile" ? "單框" : "文章拉字";
@@ -1534,39 +1556,43 @@ const App: React.FC = () => {
           setupImageIndex: imgIndexRef1,
         };
 
-        if (sourceText1) {
-          textAssets.push({
-            id: `source-l-${uniqueId}`,
-            type: "content",
-            items: [sourceText1],
-            x: 145 + 10,
-            y: 211 + 597 - 40,
-            scaleX: 1,
-            scaleY: 1,
-            baseW: 800,
-            baseH: 30,
-            opacity: 0.75,
-            bgOpacity: 0,
-            name: `${prefix}資料來源`,
-            visible: true,
-            font: "'Noto Sans TC', sans-serif",
-            size: 23,
-            theme,
-            width: 800,
-            letterSpacing: 0,
-            borderRadius: 0,
-            showBackground: false,
-            showStroke: true,
-            strokeWidth: 3,
-            groupId: mainGroupId,
-            textColor: "white",
-            strokeColor: "black"
-          });
-        }
+        const sourceAsset1: Asset | null = sourceText1 ? {
+          id: `source-l-${uniqueId}`,
+          type: "title",
+          text: sourceText1,
+          x: 145,
+          y: imgYOffset + imgTargetH - 36,
+          scaleX: 1,
+          scaleY: 1,
+          baseW: 818 - 8,
+          baseH: 32,
+          opacity: 0.8,
+          bgOpacity: 0,
+          name: `${prefix}資料來源`,
+          visible: true,
+          font: "'Noto Sans TC', sans-serif",
+          size: 24,
+          theme,
+          width: 818 - 8,
+          letterSpacing: 0,
+          borderRadius: 0,
+          showBackground: false,
+          showStroke: true,
+          strokeWidth: 3,
+          groupId: mainGroupId,
+          textColor: "white",
+          strokeColor: "black",
+          fontWeight: 500,
+          autoWrap: false,
+          layoutType: "profile",
+          textAlign: "right",
+        } : null;
 
         decorationAssets = [];
         imageAssets = [leftImg];
-        textAssets = [mainTitle];
+        textAssets = [];
+        if (sourceAsset1) textAssets.push(sourceAsset1);
+        textAssets.push(mainTitle);
 
         // 動態生成右側小標題與內文對
         const numPairs = Math.max(customTitles.length, customContents.length, 1);
@@ -1886,7 +1912,7 @@ const App: React.FC = () => {
       }
     }
 
-    let combinedAssets = [...decorationAssets, ...imageAssets, ...textAssets];
+    let combinedAssets = customCombinedAssets || [...decorationAssets, ...imageAssets, ...textAssets];
     if (type === "profile" || type === "pullout") {
       combinedAssets = recalculateProfileLayoutHeights(combinedAssets);
     }
@@ -2157,9 +2183,16 @@ const App: React.FC = () => {
       }
 
       // 2. 依次輸出圖層陣列中的所有元件 (包含裝飾層)
-      currentAssets.forEach((asset, index) => {
+      let stepCounter = 1;
+      currentAssets.forEach((asset) => {
+        // 跳過資料來源的獨立圈層，我們將其附加在圖片輸出中
+        if (asset.id.startsWith("source-")) {
+          return;
+        }
+
         // 使用圖層順序 (1-based, 因 00 保留給底圖) 加上 0 補位確保排序正確
-        const layerIdx = (index + 1).toString().padStart(2, '0');
+        const layerIdx = stepCounter.toString().padStart(2, '0');
+        stepCounter++;
         
         // 解析有意義的名稱，若無則使用類別
         const typeNameMap: Record<string, string> = {
@@ -2172,7 +2205,12 @@ const App: React.FC = () => {
 
         steps.push({
           name: `${layerIdx}_${safeName}`,
-          filter: (a) => a.id === asset.id, // 只過濾出當前圖層的 Unique ID
+          filter: (a) => {
+            if (a.id === asset.id) return true;
+            // 圖片順便帶出其關聯的來源文字層
+            if (asset.type === 'image' && a.id === asset.id.replace('img-', 'source-')) return true;
+            return false;
+          },
           showBg: false
         });
       });
@@ -2673,7 +2711,7 @@ const App: React.FC = () => {
       assets.length > 0 ? assets : undefined
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setupFormat, setupMainTitle, setupTitles, setupContents, setupImages, setupTheme, imageSizeMode, assets]);
+  }, [setupFormat, setupMainTitle, setupTitles, setupContents, setupImages, setupImageSources, setupTheme, imageSizeMode, assets]);
 
   const renderExportModal = () => (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[10000] flex items-center justify-center p-4">
@@ -2836,10 +2874,26 @@ const App: React.FC = () => {
           </div>
 
           <div className="space-y-6">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-xs">1</span>
-              選擇預設版型
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-xs">1</span>
+                選擇預設版型
+              </h2>
+              <div className="flex items-center gap-2 cursor-pointer hover:bg-white/5 px-2 py-1 rounded transition-colors" onClick={() => setSafetyVisible(!safetyVisible)}>
+                <span className="text-[10px] text-slate-400 font-bold tracking-wider pt-0.5">
+                  即時預覽對位框
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setSafetyVisible(!safetyVisible); }}
+                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${safetyVisible ? "bg-blue-600" : "bg-slate-600"}`}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${safetyVisible ? "translate-x-3.5" : "translate-x-0.5"}`}
+                  />
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               {formats.map((f) => (
                 <button
@@ -3224,15 +3278,7 @@ const App: React.FC = () => {
         <div className="flex-1 bg-[#0f0f0f] relative overflow-hidden flex flex-col items-center justify-center">
           <div className="w-full absolute top-0 inset-x-0 h-12 bg-[#1a1a1a] flex items-center px-4 border-b border-white/5 z-[100] shadow-xl shrink-0">
             <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-2">
-              即時預覽 對位框
-              <button
-                onClick={() => setSafetyVisible(!safetyVisible)}
-                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${safetyVisible ? "bg-blue-600" : "bg-slate-600"}`}
-              >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${safetyVisible ? "translate-x-3.5" : "translate-x-0.5"}`}
-                />
-              </button>
+              即時預覽
             </span>
           </div>
 
@@ -3275,7 +3321,7 @@ const App: React.FC = () => {
                     height: `${calculateAssetVisualBounds(asset).baseH}px`,
                     transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
                     transformOrigin: "left top",
-                    zIndex: 10 + index,
+                    zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
                     opacity: asset.opacity,
                   }}
                 >
@@ -3545,7 +3591,7 @@ const App: React.FC = () => {
                       height: `${calculateAssetVisualBounds(asset).baseH}px`,
                       transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
                       transformOrigin: "left top",
-                      zIndex: 10 + index,
+                      zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
                       opacity: asset.opacity,
                       overflow: "visible",
                     }}
