@@ -154,13 +154,14 @@ const App: React.FC = () => {
   const [appStage, setAppStage] = useState<"setup" | "editor">("setup");
   const [setupFormat, setSetupFormat] = useState<string>("");
   const [setupRawText, setSetupRawText] = useState("");
-  const [setupMainTitle, setSetupMainTitle] = useState<string>("");
+  const [setupMainTitle, setSetupMainTitle] = useState<string | undefined>(undefined);
   const [setupTitles, setSetupTitles] = useState<string[]>([]);
   const [setupContents, setSetupContents] = useState<string[]>([]);
   const [setupImages, setSetupImages] = useState<SetupImage[]>([]);
   const [setupImageSources, setSetupImageSources] = useState<string[]>([]);
   const [setupTheme, setSetupTheme] = useState<CGTheme>("default");
   const [imageSizeMode, setImageSizeMode] = useState<"small" | "large">("small");
+  const [isDoubleTitleHorizontal, setIsDoubleTitleHorizontal] = useState(false);
   // const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [saveModalName, setSaveModalName] = useState("");
@@ -327,20 +328,20 @@ const App: React.FC = () => {
         );
         const contentW = textW + 96;
         finalW = asset.showBackground
-          ? Math.max(asset.width, contentW)
+          ? (asset.width > 0 ? asset.width : contentW)
           : contentW;
       }
       return { baseW: Math.max(1, finalW), baseH: Math.max(1, finalH) };
     } else {
       const items = asset.items || [];
       const rowH = Math.max(1, asset.size * HEIGHT_FACTOR);
-      
+
       let totalLines = 0;
       if (asset.autoWrap && asset.width > 0) {
         const padding = asset.showBackground ? 64 : 0;
         const availableW = asset.width - padding;
         const charsPerLine = Math.max(1, Math.floor(availableW / asset.size));
-        
+
         items.forEach(item => {
           // Check for manual newlines first
           const subItems = item.split('\n');
@@ -370,7 +371,7 @@ const App: React.FC = () => {
       const finalW = asset.showBackground
         ? Math.max(asset.width, contentW)
         : contentW;
-      
+
       const totalH =
         totalLines > 0 ? rowH * totalLines + 10 * (items.length - 1) : rowH;
       return { baseW: Math.max(1, finalW), baseH: Math.max(1, totalH) };
@@ -1118,9 +1119,9 @@ const App: React.FC = () => {
     currentImageSizeMode: "small" | "large" = imageSizeMode,
     existingAssets?: Asset[]
   ): Asset[] => {
-  const findExisting = (idPart: string) => {
-    return existingAssets?.find(a => a.id.includes(idPart));
-  };
+    const findExisting = (idPart: string) => {
+      return existingAssets?.find(a => a.id.includes(idPart));
+    };
     const baseId = Date.now();
 
     // 解析 initialData
@@ -1209,7 +1210,7 @@ const App: React.FC = () => {
 
       let defaultTitle = `${prefix}標題 ${index + 1}`;
       let defaultContent = `${prefix}摘要項目內容`;
-      
+
       if (prefix === "雙框") {
         defaultTitle = index === 0 ? "小標題左" : "小標題右";
         defaultContent = index === 0 ? "內文左" : "內文右";
@@ -1220,7 +1221,7 @@ const App: React.FC = () => {
       }
 
       const existingTitle = findExisting(`title-${assetUniqueId}`);
-      
+
       let finalTitleText = defaultTitle;
       if (customTitles[index] !== undefined) {
         finalTitleText = customTitles[index]; // Use explicit setup text (can be "")
@@ -1230,7 +1231,7 @@ const App: React.FC = () => {
 
       const title: Asset = existingTitle ? {
         ...existingTitle,
-        text: finalTitleText 
+        text: finalTitleText
       } : {
         id: `title-${assetUniqueId}`,
         type: "title",
@@ -1260,7 +1261,7 @@ const App: React.FC = () => {
 
       // 3. 摘要區域 (移動到 1/2 高度下方, Y: 680, 左右內縮 150px)
       const existingContent = findExisting(`content-${assetUniqueId}`);
-      
+
       let finalContentText = defaultContent;
       if (customContents[index] !== undefined) {
         finalContentText = customContents[index];
@@ -1268,7 +1269,7 @@ const App: React.FC = () => {
         finalContentText = existingContent.items[0];
       }
 
-      const content: Asset = existingContent ? { 
+      const content: Asset = existingContent ? {
         ...existingContent,
         items: [finalContentText]
       } : {
@@ -1303,8 +1304,8 @@ const App: React.FC = () => {
       const imgData = imgInfo?.data;
       const imgIndexRef = imgInfo?.index;
       const sourceText = setupImageSources[imgIndexRef ?? 0] || "";
-      const imgYOffset = currentImageSizeMode === "large" ? 0 : 100;
-      const imgTargetH = currentImageSizeMode === "large" ? 1080 : 700;
+      const imgYOffset = currentImageSizeMode === "large" ? 0 : ((prefix === "三框" || (prefix === "雙框" && isDoubleTitleHorizontal)) ? 200 : 100);
+      const imgTargetH = currentImageSizeMode === "large" ? 1080 : ((prefix === "三框" || (prefix === "雙框" && isDoubleTitleHorizontal)) ? 600 : 700);
 
       let transform = imgData?.transform || undefined;
       if (imgData && !transform) {
@@ -1391,19 +1392,36 @@ const App: React.FC = () => {
       const w = 960;
       const g1 = createGroup(0, 0, w, "雙框");
       const g2 = createGroup(1, 960, w, "雙框");
-      
+
       const existingMainTitle = findExisting(`title-main-${baseId}`);
-      const mainTitle: Asset = existingMainTitle ? {
-        ...existingMainTitle
+      let finalMainTitleText = "雙框大標題";
+      if (customMainTitle !== undefined) {
+        finalMainTitleText = customMainTitle;
+      } else if (existingMainTitle) {
+        finalMainTitleText = existingMainTitle.text || finalMainTitleText;
+      }
+
+      const overrideStyle = isDoubleTitleHorizontal ? {
+        x: 88,
+        y: 45,
+        baseW: 1744,
+        baseH: 100,
+        width: 1744,
+        isVertical: false,
+        textAlign: "center" as const
       } : {
-        id: `title-main-${baseId}`,
-        type: "title",
         x: 882,
         y: 100,
+        baseW: 110,
+        baseH: 770,
+        width: 110,
+        isVertical: true,
+        textAlign: undefined
+      };
+
+      const defaultTitleProps = {
         scaleX: 1,
         scaleY: 1,
-        baseW: 110,
-        baseH: 880,
         opacity: 1,
         bgOpacity: 1,
         name: `雙框大標題`,
@@ -1411,19 +1429,23 @@ const App: React.FC = () => {
         font: "'Noto Sans TC', sans-serif",
         size: 110,
         theme,
-        text: customMainTitle ?? "雙框大標題",
-        width: 110,
         letterSpacing: 0,
         borderRadius: 0,
         showBackground: false,
-        showStroke: true,
-        strokeWidth: 8,
-        textColor: "white",
-        strokeColor: THEMES[theme]?.solid || '#1e3a8a',
-        autoWrap: false, // 禁用換行，啟用自動壓縮
+        showStroke: false,
+        strokeWidth: 0,
+        autoWrap: false,
         layoutType: "double",
         fontWeight: 900,
-        isVertical: true, // Mark as vertical text
+      };
+
+      const mainTitle: Asset = {
+        ...defaultTitleProps,
+        ...(existingMainTitle || {}),
+        id: `title-main-${baseId}`,
+        type: "title",
+        text: finalMainTitleText,
+        ...overrideStyle
       };
 
       customCombinedAssets = [
@@ -1443,7 +1465,48 @@ const App: React.FC = () => {
       const g2 = createGroup(1, 640, w, "三框");
       const g3 = createGroup(2, 1280, w, "三框");
 
+      const existingMainTitle = findExisting(`title-main-${baseId}`);
+      let finalMainTitleText = "三框大標題";
+      if (customMainTitle !== undefined) {
+        finalMainTitleText = customMainTitle;
+      } else if (existingMainTitle) {
+        finalMainTitleText = existingMainTitle.text || finalMainTitleText;
+      }
+
+      const mainTitle: Asset = existingMainTitle ? {
+        ...existingMainTitle,
+        text: finalMainTitleText
+      } : {
+        id: `title-main-${baseId}`,
+        type: "title",
+        x: 520,
+        y: 45,
+        scaleX: 1,
+        scaleY: 1,
+        baseW: 880,
+        baseH: 100,
+        opacity: 1,
+        bgOpacity: 1,
+        name: `三框大標題`,
+        visible: true,
+        font: "'Noto Sans TC', sans-serif",
+        size: 110,
+        theme,
+        text: finalMainTitleText,
+        width: 880,
+        letterSpacing: 0,
+        borderRadius: 0,
+        showBackground: false,
+        showStroke: false,
+        strokeWidth: 0,
+        autoWrap: false,
+        layoutType: "triple",
+        fontWeight: 900,
+        textAlign: "center"
+      };
+
       customCombinedAssets = [
+        mainTitle,
         g1.img,
         ...(g1.source ? [g1.source] : []),
         g1.title,
@@ -1466,7 +1529,17 @@ const App: React.FC = () => {
 
         // 1. 最上面大標題字
         const existingMainTitleProfile = findExisting(`title-main-${uniqueId}`);
-        const mainTitle: Asset = existingMainTitleProfile ? { ...existingMainTitleProfile } : {
+        let finalMainTitleText = "單框大標題";
+        if (customMainTitle !== undefined) {
+          finalMainTitleText = customMainTitle;
+        } else if (existingMainTitleProfile) {
+          finalMainTitleText = existingMainTitleProfile.text || finalMainTitleText;
+        }
+
+        const mainTitle: Asset = existingMainTitleProfile ? {
+          ...existingMainTitleProfile,
+          text: finalMainTitleText
+        } : {
           id: `title-main-${uniqueId}`,
           type: "title",
           x: 140,
@@ -1482,7 +1555,7 @@ const App: React.FC = () => {
           font: "'Noto Sans TC', sans-serif",
           size: 110,
           theme,
-          text: customMainTitle ?? "大標題最多打十二個字",
+          text: finalMainTitleText,
           width: 1320, // 110 * 12 = 1320 (MaxSize)
           letterSpacing: 0,
           borderRadius: 0,
@@ -1509,10 +1582,10 @@ const App: React.FC = () => {
           const containerH = imgTargetH;
           const natW = imgData.width || 1;
           const natH = imgData.height || 1;
-          
+
           // 計算填滿容器所需的最小比例 (Cover)
           const scale = Math.max(containerW / natW, containerH / natH);
-          
+
           // 置中位移：(容器寬 - 圖片顯示寬) / 2
           const tx = (containerW - natW * scale) / 2;
           const ty = (containerH - natH * scale) / 2;
@@ -1521,9 +1594,9 @@ const App: React.FC = () => {
 
         const existingLeftImgProfile = findExisting(`img-l-${uniqueId}`);
         const leftImg: Asset = existingLeftImgProfile ? {
-           ...existingLeftImgProfile,
-           src: imgData?.src || existingLeftImgProfile.src,
-           originalSrc: imgData?.src || existingLeftImgProfile.originalSrc,
+          ...existingLeftImgProfile,
+          src: imgData?.src || existingLeftImgProfile.src,
+          originalSrc: imgData?.src || existingLeftImgProfile.originalSrc,
         } : {
           id: `img-l-${uniqueId}`,
           type: "image",
@@ -1611,7 +1684,7 @@ const App: React.FC = () => {
 
           const defaultProfileTitle = i === 0 ? "我是小標題1" : `新增小標${i + 1}`;
           const existingRTitle = findExisting(`title-r${i + 1}-${uniqueId}`);
-          
+
           let finalProfileTitleText = defaultProfileTitle;
           if (customTitles[i] !== undefined) {
             finalProfileTitleText = customTitles[i];
@@ -1652,7 +1725,7 @@ const App: React.FC = () => {
 
           const defaultProfileContent = i === 0 ? "我是內文1" : `新增內文${i + 1}`;
           const existingRContent = findExisting(`content-r${i + 1}-${uniqueId}`);
-          
+
           let finalProfileContentText = defaultProfileContent;
           if (customContents[i] !== undefined) {
             finalProfileContentText = customContents[i];
@@ -1741,9 +1814,9 @@ const App: React.FC = () => {
 
         const existingLeftImgPullout = findExisting(`img-l-${leftUniqueId}`);
         const leftImg: Asset = existingLeftImgPullout ? {
-           ...existingLeftImgPullout,
-           src: imgData2?.src || existingLeftImgPullout.src,
-           originalSrc: imgData2?.src || existingLeftImgPullout.originalSrc,
+          ...existingLeftImgPullout,
+          src: imgData2?.src || existingLeftImgPullout.src,
+          originalSrc: imgData2?.src || existingLeftImgPullout.originalSrc,
         } : {
           id: `img-l-${leftUniqueId}`,
           type: "image",
@@ -1931,13 +2004,13 @@ const App: React.FC = () => {
   ) => {
     pushToHistory(assets);
     if (type === "profile" && !bgImageUrl) {
-        setBgImageUrl(
-          "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%B0%8F%E6%AA%94%E6%A1%88)00.png"
-        );
+      setBgImageUrl(
+        "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%B0%8F%E6%AA%94%E6%A1%88)00.png"
+      );
     } else if ((type === "double" || type === "triple") && !bgImageUrl) {
-        setBgImageUrl(
-          "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%AF%86%E7%B6%B2%E7%99%BD).jpg"
-        );
+      setBgImageUrl(
+        "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%AF%86%E7%B6%B2%E7%99%BD).jpg"
+      );
     }
     const combinedAssets = generateLayoutAssets(type, initialData, initialImages, theme, imageSizeMode, assets.length > 0 ? assets : undefined);
     setAssets((prev) => [...prev, ...combinedAssets]);
@@ -2095,7 +2168,7 @@ const App: React.FC = () => {
     }
     const currentRef = appStage === "setup" ? setupCanvasRef : canvasRef;
     if (isExporting) return;
-    
+
     // 如果 ref 還沒準備好，至少確保 Modal 能開，匯出時會再檢查一次
     setIsExportModalOpen(true);
   };
@@ -2103,10 +2176,10 @@ const App: React.FC = () => {
   const handleExportPngOriginal = async () => {
     const ref = appStage === "setup" ? setupCanvasRef : canvasRef;
     const currentAssets = appStage === "setup" ? previewAssets : assets;
-    
+
     if (!ref.current) {
-        alert("找不到畫布元件，請稍候再試或重新整理。");
-        return;
+      alert("找不到畫布元件，請稍候再試或重新整理。");
+      return;
     }
     setIsExportModalOpen(false);
     try {
@@ -2140,10 +2213,11 @@ const App: React.FC = () => {
             .querySelectorAll('[data-id="canvas-main-container"] span')
             .forEach((span) => {
               const el = span as HTMLElement;
+              const originalTransform = el.style.transform && el.style.transform !== "none" ? el.style.transform : "";
               const style = window.getComputedStyle(el);
               const fontSize = parseFloat(style.fontSize);
               if (!isNaN(fontSize)) {
-                el.style.transform = `translateY(${-0.38 * fontSize}px)`;
+                el.style.transform = `${originalTransform} translateY(${-0.38 * fontSize}px)`.trim();
               }
             });
         },
@@ -2165,8 +2239,8 @@ const App: React.FC = () => {
   const handleExportSequence = async () => {
     const ref = appStage === "setup" ? setupCanvasRef : canvasRef;
     if (!ref.current) {
-        alert("找不到畫布元件，請稍候再試或重新整理。");
-        return;
+      alert("找不到畫布元件，請稍候再試或重新整理。");
+      return;
     }
     if (isExporting) return;
     setIsExporting(true);
@@ -2193,7 +2267,7 @@ const App: React.FC = () => {
         // 使用圖層順序 (1-based, 因 00 保留給底圖) 加上 0 補位確保排序正確
         const layerIdx = stepCounter.toString().padStart(2, '0');
         stepCounter++;
-        
+
         // 解析有意義的名稱，若無則使用類別
         const typeNameMap: Record<string, string> = {
           "block": "裝飾背景",
@@ -2251,21 +2325,21 @@ const App: React.FC = () => {
             // 處理所有元件
             const currentAssets = appStage === "setup" ? previewAssets : assets;
             currentAssets.forEach(a => {
-                const el = clonedDoc.querySelector(`[data-asset-id="${a.id}"]`) as HTMLElement;
-                if (el) {
-                    el.style.display = step.filter(a) ? "flex" : "none";
-                }
+              const el = clonedDoc.querySelector(`[data-asset-id="${a.id}"]`) as HTMLElement;
+              if (el) {
+                el.style.display = step.filter(a) ? "flex" : "none";
+              }
             });
 
-            // 文字偏移修正
             clonedDoc
               .querySelectorAll('[data-id="canvas-main-container"] span')
               .forEach((span) => {
                 const el = span as HTMLElement;
+                const originalTransform = el.style.transform && el.style.transform !== "none" ? el.style.transform : "";
                 const style = window.getComputedStyle(el);
                 const fontSize = parseFloat(style.fontSize);
                 if (!isNaN(fontSize)) {
-                  el.style.transform = `translateY(${-0.38 * fontSize}px)`;
+                  el.style.transform = `${originalTransform} translateY(${-0.38 * fontSize}px)`.trim();
                 }
               });
           },
@@ -2599,7 +2673,7 @@ const App: React.FC = () => {
         }
       });
 
-      finalMainTitle = mT;
+      finalMainTitle = mT || undefined;
       finalTitles = t.length ? t : [""];
       finalContents = c.length ? c : [""];
 
@@ -2710,8 +2784,8 @@ const App: React.FC = () => {
       imageSizeMode,
       assets.length > 0 ? assets : undefined
     );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setupFormat, setupMainTitle, setupTitles, setupContents, setupImages, setupImageSources, setupTheme, imageSizeMode, assets]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setupFormat, setupMainTitle, setupTitles, setupContents, setupImages, setupImageSources, setupTheme, imageSizeMode, isDoubleTitleHorizontal, assets]);
 
   const renderExportModal = () => (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[10000] flex items-center justify-center p-4">
@@ -2955,7 +3029,7 @@ const App: React.FC = () => {
 
             {/* 裝飾底圖選擇 (比照編輯模式) */}
             <div className="pt-2">
-              <button 
+              <button
                 onClick={() => setIsSetupBgPanelOpen(!isSetupBgPanelOpen)}
                 className="w-full flex items-center justify-between px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-left transition-colors mb-3"
               >
@@ -3015,16 +3089,8 @@ const App: React.FC = () => {
             </h2>
 
             {!setupFormat ? (
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">內文輸入 (可自動解析版型)</label>
-                <textarea
-                  className="w-full h-48 bg-white/5 border border-white/10 rounded-xl p-3 text-sm outline-none focus:border-blue-500 transition-all resize-none shadow-inner"
-                  placeholder="請在此輸入或貼上整段內容...\n使用「(標)=大標题」設定主標\n使用「(小標)=小標题」設定小標\n其餘內容將自動放進內文\n系統將自動判斷並選擇合適的版型。"
-                  value={setupRawText}
-                  onChange={(e) => {
-                    setSetupRawText(e.target.value);
-                  }}
-                />
+              <div className="flex items-center justify-center p-8 border border-dashed border-white/10 rounded-xl bg-white/5">
+                <span className="text-sm font-bold text-slate-500 tracking-wider">請先選擇上方的「預設版型」</span>
               </div>
             ) : (
               <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
@@ -3035,103 +3101,56 @@ const App: React.FC = () => {
                     type="text"
                     className="w-full bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none transition-all"
                     placeholder="輸入主標題..."
-                    value={setupMainTitle ?? "大標題最多打十二個字"}
+                    value={setupMainTitle ?? (setupFormat === "triple" ? "三框大標題" : setupFormat === "double" ? "雙框大標題" : "單框大標題")}
                     onChange={(e) => setSetupMainTitle(e.target.value)}
                   />
                 </div>
 
                 {/* 根據版型生成的動態區塊 */}
                 {setupFormat === "double" ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    {[0, 1].map((i) => (
-                      <div key={i} className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/5">
-                        <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
-                          區塊 {i === 0 ? "左" : "右"}
-                        </label>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 font-bold">小標題</label>
-                          <input
-                            type="text"
-                            className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-xs outline-none focus:border-blue-500"
-                            value={setupTitles[i] ?? (i === 0 ? "小標題左" : "小標題右")}
-                            onChange={(e) => {
-                              const newT = [...setupTitles];
-                              newT[i] = e.target.value;
-                              setSetupTitles(newT);
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] text-slate-500 font-bold">單框內文</label>
-                          <textarea
-                            className="w-full h-20 bg-black/30 border border-white/10 rounded-md p-2 text-xs outline-none focus:border-blue-500 resize-none"
-                            value={setupContents[i] ?? (i === 0 ? "內文左" : "內文右")}
-                            onChange={(e) => {
-                              const newC = [...setupContents];
-                              newC[i] = e.target.value;
-                              setSetupContents(newC);
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : setupFormat === "triple" ? (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-2">
-                      {[0, 1, 2].map((i) => (
-                        <div key={i} className="space-y-2 p-2 bg-white/5 rounded-xl border border-white/5">
-                        <label className="text-[9px] font-black text-blue-400 uppercase tracking-widest text-center block">
-                          {i === 0 ? "左" : i === 1 ? "中" : "右"}
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="標題"
-                          className="w-full bg-black/30 border border-white/5 rounded p-1.5 text-[10px] outline-none focus:border-blue-500"
-                          value={setupTitles[i] ?? `小標題${i === 0 ? '左' : i === 1 ? '中' : '右'}`}
-                          onChange={(e) => {
-                            const newT = [...setupTitles];
-                            newT[i] = e.target.value;
-                            setSetupTitles(newT);
-                          }}
-                        />
-                        <textarea
-                          placeholder="內文"
-                          className="w-full h-20 bg-black/30 border border-white/5 rounded p-1.5 text-[10px] outline-none focus:border-blue-500 resize-none"
-                          value={setupContents[i] ?? `內文${i === 0 ? '左' : i === 1 ? '中' : '右'}`}
-                          onChange={(e) => {
-                            const newC = [...setupContents];
-                            newC[i] = e.target.value;
-                            setSetupContents(newC);
-                          }}
-                        />
+                    <div className="flex items-center justify-between bg-white/5 px-4 py-2.5 rounded-xl border border-white/10">
+                      <label className="text-xs text-slate-300 font-bold tracking-widest">大標題排版設定</label>
+                      <div className="flex gap-2 bg-black/30 p-1 rounded-lg">
+                        <button
+                          className={`px-3 py-1.5 rounded transition-colors text-xs tracking-wider ${
+                            !isDoubleTitleHorizontal ? "bg-blue-600 text-white font-bold shadow-md" : "text-slate-400 hover:text-white"
+                          }`}
+                          onClick={() => setIsDoubleTitleHorizontal(false)}
+                        >
+                          直書 (側邊置中)
+                        </button>
+                        <button
+                          className={`px-3 py-1.5 rounded transition-colors text-xs tracking-wider ${
+                            isDoubleTitleHorizontal ? "bg-blue-600 text-white font-bold shadow-md" : "text-slate-400 hover:text-white"
+                          }`}
+                          onClick={() => setIsDoubleTitleHorizontal(true)}
+                        >
+                          橫書 (頂部置中)
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                </div>
-                ) : (
-                  <div className="space-y-4">
-                    {(setupTitles.length > 0 ? setupTitles : [undefined as any]).map((title, i) => {
-                      if (setupFormat !== "profile" && i > 0) return null;
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                    {[0, 1].map((i) => {
+                      const contentText = setupContents[i] ?? (i === 0 ? "內文左" : "內文右");
+                      const contentLines = contentText.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 18)), 0);
+                      const isAtLimit = contentLines >= 3;
 
                       return (
-                        <div key={i} className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5 relative group/item">
-                          {setupFormat === "profile" && setupTitles.length > 1 && (
-                            <button
-                              className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full text-white text-[10px] opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-700 shadow-lg z-10"
-                              onClick={() => {
-                                setSetupTitles(prev => prev.filter((_, idx) => idx !== i));
-                                setSetupContents(prev => prev.filter((_, idx) => idx !== i));
-                              }}
-                            >✕</button>
-                          )}
+                        <div key={i} className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/5">
+                          <label className="text-[10px] font-black tracking-widest flex items-center justify-between">
+                            <span className="text-blue-400">區塊 {i === 0 ? "左" : "右"}</span>
+                            <span className={isAtLimit ? "text-red-400 bg-red-500/20 px-1 py-0.5 rounded shadow-[0_0_10px_rgba(239,68,68,0.2)]" : "text-slate-500"}>
+                              {contentLines} / 3 行
+                            </span>
+                          </label>
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">小標題 {setupFormat === "profile" ? i + 1 : ""}</label>
+                            <label className="text-[10px] text-slate-500 font-bold">小標題</label>
                             <input
                               type="text"
-                              placeholder="我是小標題我只能打十三個字"
-                              className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-xs focus:border-blue-500 outline-none transition-all"
-                              value={setupTitles[i] ?? (i === 0 ? "我是小標題1" : `新增小標${i + 1}`)}
+                              maxLength={15}
+                              className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-xs outline-none focus:border-blue-500 transition-colors"
+                              value={setupTitles[i] ?? (i === 0 ? "小標題左" : "小標題右")}
                               onChange={(e) => {
                                 const newT = [...setupTitles];
                                 newT[i] = e.target.value;
@@ -3140,14 +3159,18 @@ const App: React.FC = () => {
                             />
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">單框內文 {setupFormat === "profile" ? i + 1 : ""}</label>
+                            <label className="text-[10px] text-slate-500 font-bold">雙框內文</label>
                             <textarea
-                              placeholder="我是內文我一排只能打十八個字"
-                              className="w-full h-24 bg-black/30 border border-white/10 rounded-lg p-3 text-xs outline-none focus:border-blue-500 transition-all resize-none shadow-inner"
-                              value={setupContents[i] ?? (i === 0 ? "我是內文1" : `新增內文${i + 1}`)}
+                              className={`w-full h-20 bg-black/30 border ${isAtLimit ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-md p-2 text-xs outline-none resize-none transition-colors`}
+                              value={contentText}
                               onChange={(e) => {
+                                const newVal = e.target.value;
+                                const newLines = newVal.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 18)), 0);
+                                if (newLines > 3 && newVal.length > (setupContents[i]?.length || 0)) {
+                                  return; // Stop typing if it exceeds 3 lines
+                                }
                                 const newC = [...setupContents];
-                                newC[i] = e.target.value;
+                                newC[i] = newVal;
                                 setSetupContents(newC);
                               }}
                             />
@@ -3155,6 +3178,146 @@ const App: React.FC = () => {
                         </div>
                       );
                     })}
+                  </div>
+                  </div>
+                ) : setupFormat === "triple" ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                      {[0, 1, 2].map((i) => {
+                        const contentText = setupContents[i] ?? `內文${i === 0 ? '左' : i === 1 ? '中' : '右'}`;
+                        const contentLines = contentText.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 10)), 0);
+                        const isAtLimit = contentLines >= 3;
+
+                        return (
+                          <div key={i} className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/5">
+                            <label className="text-[10px] font-black tracking-widest flex items-center justify-between">
+                              <span className="text-blue-400">{i === 0 ? "左側" : i === 1 ? "中間" : "右側"}</span>
+                              <span className={isAtLimit ? "text-red-400 bg-red-500/20 px-1 py-0.5 rounded shadow-[0_0_10px_rgba(239,68,68,0.2)]" : "text-slate-500"}>
+                                {contentLines} / 3 行
+                              </span>
+                            </label>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] text-slate-500 font-bold">小標題</label>
+                              <input
+                                type="text"
+                                maxLength={10}
+                                placeholder="標題"
+                                className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-[10px] outline-none focus:border-blue-500 transition-colors"
+                                value={setupTitles[i] ?? `小標題${i === 0 ? '左' : i === 1 ? '中' : '右'}`}
+                                onChange={(e) => {
+                                  const newT = [...setupTitles];
+                                  newT[i] = e.target.value;
+                                  setSetupTitles(newT);
+                                }}
+                              />
+                            </div>
+                            <div className="space-y-1.5">
+                              <label className="text-[10px] text-slate-500 font-bold">三框內文</label>
+                              <textarea
+                                placeholder="內文"
+                                className={`w-full h-20 bg-black/30 border ${isAtLimit ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-md p-2 text-[10px] outline-none resize-none transition-colors`}
+                                value={contentText}
+                                onChange={(e) => {
+                                  const newVal = e.target.value;
+                                  const newLines = newVal.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 10)), 0);
+                                  if (newLines > 3 && newVal.length > (setupContents[i]?.length || 0)) {
+                                    return; // 攔截超過 3 行的輸入
+                                  }
+                                  const newC = [...setupContents];
+                                  newC[i] = newVal;
+                                  setSetupContents(newC);
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {(() => {
+                      const isSingleType = setupFormat === "profile" || setupFormat === "pullout";
+                      const groupCount = Math.max(1, setupTitles.length, setupContents.length);
+                      const maxContentLines = isSingleType ? 14 - groupCount * 2 : 999;
+                      const currentContentLines = isSingleType ? setupContents.reduce((acc, c) => {
+                        if (!c || typeof c !== 'string') return acc;
+                        return acc + c.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 20)), 0);
+                      }, 0) : 0;
+                      const isNearLimit = currentContentLines >= maxContentLines - 2;
+
+                      return (
+                        <>
+                          {isSingleType && (
+                            <div className={`text-[10px] font-bold tracking-widest px-3 py-2 rounded-lg border flex items-center justify-between transition-all ${currentContentLines >= maxContentLines ? 'bg-red-500/20 text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : isNearLimit ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50' : 'bg-white/5 text-slate-400 border-white/10'}`}>
+                              <span>全域內文空間監測</span>
+                              <div className="flex items-center gap-2">
+                                <span>{currentContentLines} / {maxContentLines} 行</span>
+                                {currentContentLines >= maxContentLines && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded text-[9px] animate-pulse">已達安全上限</span>}
+                              </div>
+                            </div>
+                          )}
+                          {(setupTitles.length > 0 ? setupTitles : [undefined as any]).map((title, i) => {
+                            if (setupFormat !== "profile" && i > 0) return null;
+
+                            return (
+                              <div key={i} className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5 relative group/item">
+                                {setupFormat === "profile" && setupTitles.length > 1 && (
+                                  <button
+                                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full text-white text-[10px] opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-700 shadow-lg z-10"
+                                    onClick={() => {
+                                      setSetupTitles(prev => prev.filter((_, idx) => idx !== i));
+                                      setSetupContents(prev => prev.filter((_, idx) => idx !== i));
+                                    }}
+                                  >✕</button>
+                                )}
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">小標題 {setupFormat === "profile" ? i + 1 : ""}</label>
+                                  <input
+                                    type="text"
+                                    maxLength={isSingleType ? 15 : undefined}
+                                    placeholder="我是小標題我只能打十三個字"
+                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-xs focus:border-blue-500 outline-none transition-all"
+                                    value={setupTitles[i] ?? (i === 0 ? "我是小標題1" : `新增小標${i + 1}`)}
+                                    onChange={(e) => {
+                                      const newT = [...setupTitles];
+                                      newT[i] = e.target.value;
+                                      setSetupTitles(newT);
+                                    }}
+                                  />
+                                </div>
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">單框內文 {setupFormat === "profile" ? i + 1 : ""}</label>
+                                  <textarea
+                                    placeholder="我是內文一排約能打廿個字"
+                                    className={`w-full h-24 bg-black/30 border ${isSingleType && currentContentLines >= maxContentLines ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-lg p-3 text-xs outline-none transition-all resize-none shadow-inner`}
+                                    value={setupContents[i] ?? (i === 0 ? "我是內文1" : `新增內文${i + 1}`)}
+                                    onChange={(e) => {
+                                      const newVal = e.target.value;
+                                      if (isSingleType) {
+                                        const newContents = [...setupContents];
+                                        newContents[i] = newVal;
+                                        const newLines = newContents.reduce((acc, c) => {
+                                          if (!c || typeof c !== 'string') return acc;
+                                          return acc + c.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 20)), 0);
+                                        }, 0);
+                                        // 攔截：如果超過上限，而且新字串比舊字串長，代表在增加字元
+                                        if (newLines > maxContentLines && newVal.length > (setupContents[i]?.length || 0)) {
+                                          return;
+                                        }
+                                      }
+                                      const newC = [...setupContents];
+                                      newC[i] = newVal;
+                                      setSetupContents(newC);
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
 
                     {setupFormat === "profile" && (
                       <button
@@ -3270,7 +3433,7 @@ const App: React.FC = () => {
               style={{
                 width: "1920px",
                 height: "1080px",
-                transform: `scale(${setupPreviewScale})`, 
+                transform: `scale(${setupPreviewScale})`,
                 transformOrigin: "center center",
                 backgroundColor: canvasBgVisible ? "#2a2a2a" : "#ffffff",
                 backgroundImage: !canvasBgVisible
@@ -3290,49 +3453,49 @@ const App: React.FC = () => {
               {previewAssets
                 .filter(asset => asset.type !== 'block' || canvasBgVisible)
                 .map((asset, index) => (
-                <div
-                  key={asset.id}
-                  data-asset-id={asset.id}
-                  className="absolute flex items-start justify-start pointer-events-none"
-                  style={{
-                    left: `${asset.x}px`,
-                    top: `${asset.y}px`,
-                    width: `${calculateAssetVisualBounds(asset).baseW}px`,
-                    height: `${calculateAssetVisualBounds(asset).baseH}px`,
-                    transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
-                    transformOrigin: "left top",
-                    zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
-                    opacity: asset.opacity,
-                  }}
-                >
-                  <div 
-                    className={`relative w-full h-full z-10 transition-transform duration-300 ${asset.type === "image" ? "pointer-events-auto cursor-move" : ""}`}
-                    onMouseDown={(e) => {
-                      if (asset.type === "image" && asset.setupImageIndex !== undefined) {
-                        handleSetupImageInnerMouseDown(e, asset.setupImageIndex, asset);
-                      }
-                    }}
-                    onWheel={(e) => {
-                      if (asset.type === "image" && asset.setupImageIndex !== undefined) {
-                        handleSetupImageInnerWheel(e, asset.setupImageIndex, asset);
-                      }
-                    }}
-                    onContextMenu={(e) => {
-                      if (asset.type === "image" && asset.setupImageIndex !== undefined) {
-                        resetSetupImageInnerTransform(e, asset.setupImageIndex);
-                      }
+                  <div
+                    key={asset.id}
+                    data-asset-id={asset.id}
+                    className="absolute flex items-start justify-start pointer-events-none"
+                    style={{
+                      left: `${asset.x}px`,
+                      top: `${asset.y}px`,
+                      width: `${calculateAssetVisualBounds(asset).baseW}px`,
+                      height: `${calculateAssetVisualBounds(asset).baseH}px`,
+                      transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
+                      transformOrigin: "left top",
+                      zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
+                      opacity: asset.opacity,
                     }}
                   >
-                    <CGPreview
-                      data={asset as any}
-                      mode={asset.type === "title" || asset.type === "block" ? "title" : "content"}
-                      isSelected={false}
-                      hasGlobalBg={!!bgImageUrl && canvasBgVisible}
-                      isExporting={isExporting}
-                    />
+                    <div
+                      className={`relative w-full h-full z-10 transition-transform duration-300 ${asset.type === "image" ? "pointer-events-auto cursor-move" : ""}`}
+                      onMouseDown={(e) => {
+                        if (asset.type === "image" && asset.setupImageIndex !== undefined) {
+                          handleSetupImageInnerMouseDown(e, asset.setupImageIndex, asset);
+                        }
+                      }}
+                      onWheel={(e) => {
+                        if (asset.type === "image" && asset.setupImageIndex !== undefined) {
+                          handleSetupImageInnerWheel(e, asset.setupImageIndex, asset);
+                        }
+                      }}
+                      onContextMenu={(e) => {
+                        if (asset.type === "image" && asset.setupImageIndex !== undefined) {
+                          resetSetupImageInnerTransform(e, asset.setupImageIndex);
+                        }
+                      }}
+                    >
+                      <CGPreview
+                        data={asset as any}
+                        mode={asset.type === "title" || asset.type === "block" ? "title" : "content"}
+                        isSelected={false}
+                        hasGlobalBg={!!bgImageUrl && canvasBgVisible}
+                        isExporting={isExporting}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
 
               {safetyVisible && <SafetyGuides opacity={0.5} />}
             </div>
@@ -3386,288 +3549,289 @@ const App: React.FC = () => {
             </div>
             {/* Toolbar Buttons... continue using existing rest of return */}
 
-        <button
-          onClick={undo}
-          disabled={history.length === 0}
-          className="text-[10px] font-bold text-slate-500 hover:text-white disabled:opacity-20 transition-all"
-        >
-          復原 (^Z)
-        </button>
-        <button
-          onClick={handleRestart}
-          className="text-[10px] font-bold text-slate-500 hover:text-red-400 transition-all border border-white/10 px-2 py-0.5 rounded-sm hover:border-red-500/30"
-        >
-          重新開始
-        </button>
-        <button
-          onClick={() => setAppStage("setup")}
-          className="text-[10px] font-bold text-slate-500 hover:text-blue-400 transition-all border border-white/10 px-2 py-0.5 rounded-sm hover:border-blue-500/30"
-        >
-          回到前置作業
-        </button>
-        <div className="ml-auto flex items-center gap-4">
-          <div className="flex items-center gap-3 mr-4">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-2">
-              對位框
-              {safetyVisible && (
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={safetyOpacity}
-                  onChange={(e) => setSafetyOpacity(parseFloat(e.target.value))}
-                  className="w-20 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                  title={`透明度: ${Math.round(safetyOpacity * 100)}%`}
-                />
-              )}
+            <button
+              onClick={undo}
+              disabled={history.length === 0}
+              className="text-[10px] font-bold text-slate-500 hover:text-white disabled:opacity-20 transition-all"
+            >
+              復原 (^Z)
+            </button>
+            <button
+              onClick={handleRestart}
+              className="text-[10px] font-bold text-slate-500 hover:text-red-400 transition-all border border-white/10 px-2 py-0.5 rounded-sm hover:border-red-500/30"
+            >
+              重新開始
+            </button>
+            <button
+              onClick={() => setAppStage("setup")}
+              className="text-[10px] font-bold text-slate-500 hover:text-blue-400 transition-all border border-white/10 px-2 py-0.5 rounded-sm hover:border-blue-500/30"
+            >
+              回到前置作業
+            </button>
+            <div className="ml-auto flex items-center gap-4">
+              <div className="flex items-center gap-3 mr-4">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-2">
+                  對位框
+                  {safetyVisible && (
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={safetyOpacity}
+                      onChange={(e) => setSafetyOpacity(parseFloat(e.target.value))}
+                      className="w-20 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      title={`透明度: ${Math.round(safetyOpacity * 100)}%`}
+                    />
+                  )}
+                  <button
+                    onClick={() => setSafetyVisible(!safetyVisible)}
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${safetyVisible ? "bg-blue-600" : "bg-slate-600"}`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${safetyVisible ? "translate-x-3.5" : "translate-x-0.5"}`}
+                    />
+                  </button>
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-slate-600 font-black uppercase tracking-tighter">
+                <span className="bg-white/5 px-2 py-1 rounded">T: 標題</span>
+                <span className="bg-white/5 px-2 py-1 rounded">C: 摘要</span>
+                <span className="bg-white/5 px-2 py-1 rounded">B: 色塊</span>
+                <span className="bg-white/5 px-2 py-1 rounded">I: 圖片</span>
+              </div>
               <button
-                onClick={() => setSafetyVisible(!safetyVisible)}
-                className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${safetyVisible ? "bg-blue-600" : "bg-slate-600"}`}
+                onClick={handleExportPngWithChoice}
+                disabled={isExporting}
+                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-1.5 rounded-sm font-black text-[10px] uppercase tracking-widest shadow-2xl active:scale-95 transition-all"
               >
-                <span
-                  className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${safetyVisible ? "translate-x-3.5" : "translate-x-0.5"}`}
-                />
+                {isExporting ? "處理中..." : "輸出CG (^S)"}
               </button>
-            </span>
-          </div>
-          <div className="flex items-center gap-3 text-[10px] text-slate-600 font-black uppercase tracking-tighter">
-            <span className="bg-white/5 px-2 py-1 rounded">T: 標題</span>
-            <span className="bg-white/5 px-2 py-1 rounded">C: 摘要</span>
-            <span className="bg-white/5 px-2 py-1 rounded">B: 色塊</span>
-            <span className="bg-white/5 px-2 py-1 rounded">I: 圖片</span>
-          </div>
-          <button
-            onClick={handleExportPngWithChoice}
-            disabled={isExporting}
-            className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-1.5 rounded-sm font-black text-[10px] uppercase tracking-widest shadow-2xl active:scale-95 transition-all"
-          >
-            {isExporting ? "處理中..." : "輸出CG (^S)"}
-          </button>
-        </div>
-      </div>
-
-      {isExportModalOpen && renderExportModal()}
-
-      <div className="flex flex-1 overflow-hidden relative">
-        <aside className="w-[56px] bg-[#1a1a1a] border-r border-black flex flex-col items-center py-4 gap-4 z-[100] overflow-y-auto custom-scrollbar">
-          <div className="flex flex-col gap-2 items-center">
-            <div className="text-[8px] font-black text-slate-600 uppercase mb-1">
-              基礎
             </div>
-            <ToolIcon icon="T" onClick={addNewTitle} label="標題 (T)" />
-            <ToolIcon icon="C" onClick={addNewContent} label="摘要 (C)" />
-            <ToolIcon icon="B" onClick={addNewBlock} label="色塊 (B)" />
-            <ToolIcon icon="💥" onClick={addNewStamp} label="蓋章 (S)" />
-            <ToolIcon
-              icon="🖼️"
-              onClick={() => fileInputRef.current?.click()}
-              label="上傳圖片 (I)"
-            />
-            <ToolIcon
-              icon="🌌"
-              active={isBgPanelOpen}
-              onClick={() => setIsBgPanelOpen(!isBgPanelOpen)}
-              label="裝飾底圖"
-            />
           </div>
 
-          <div className="w-8 h-px bg-white/10" />
+          {isExportModalOpen && renderExportModal()}
 
-          <div className="flex flex-col gap-2 items-center">
-            <div className="text-[8px] font-black text-slate-600 uppercase mb-1 text-center">
-              多功能
-            </div>
-            <ToolIcon
-              icon="◫"
-              onClick={() => applyMultifunctionLayout("double")}
-              label="雙框"
-            />
-            <ToolIcon
-              icon="▥"
-              onClick={() => applyMultifunctionLayout("triple")}
-              label="三框"
-            />
-            <ToolIcon
-              icon="◻"
-              onClick={() => applyMultifunctionLayout("profile")}
-              label="單框"
-            />
-            <ToolIcon
-              icon="🔍"
-              onClick={() => applyMultifunctionLayout("pullout")}
-              label="文章拉字"
-            />
-          </div>
+          <div className="flex flex-1 overflow-hidden relative">
+            <aside className="w-[56px] bg-[#1a1a1a] border-r border-black flex flex-col items-center py-4 gap-4 z-[100] overflow-y-auto custom-scrollbar">
+              <div className="flex flex-col gap-2 items-center">
+                <div className="text-[8px] font-black text-slate-600 uppercase mb-1">
+                  基礎
+                </div>
+                <ToolIcon icon="T" onClick={addNewTitle} label="標題 (T)" />
+                <ToolIcon icon="C" onClick={addNewContent} label="摘要 (C)" />
+                <ToolIcon icon="B" onClick={addNewBlock} label="色塊 (B)" />
+                <ToolIcon icon="💥" onClick={addNewStamp} label="蓋章 (S)" />
+                <ToolIcon
+                  icon="🖼️"
+                  onClick={() => fileInputRef.current?.click()}
+                  label="上傳圖片 (I)"
+                />
+                <ToolIcon
+                  icon="🌌"
+                  active={isBgPanelOpen}
+                  onClick={() => setIsBgPanelOpen(!isBgPanelOpen)}
+                  label="裝飾底圖"
+                />
+              </div>
 
-          <div className="w-8 h-px bg-white/10" />
+              <div className="w-8 h-px bg-white/10" />
 
-          <ToolIcon
-            icon="💾"
-            onClick={handleSaveProjectInitiate}
-            label="儲存專案 (Ctrl+Shift+S)"
-          />
-          <ToolIcon
-            icon="📂"
-            onClick={() => projectFileInputRef.current?.click()}
-            label="開啟專案 (Ctrl+Shift+O)"
-          />
+              <div className="flex flex-col gap-2 items-center">
+                <div className="text-[8px] font-black text-slate-600 uppercase mb-1 text-center">
+                  多功能
+                </div>
+                <ToolIcon
+                  icon="◫"
+                  onClick={() => applyMultifunctionLayout("double")}
+                  label="雙框"
+                />
+                <ToolIcon
+                  icon="▥"
+                  onClick={() => applyMultifunctionLayout("triple")}
+                  label="三框"
+                />
+                <ToolIcon
+                  icon="◻"
+                  onClick={() => applyMultifunctionLayout("profile")}
+                  label="單框"
+                />
+                <ToolIcon
+                  icon="🔍"
+                  onClick={() => applyMultifunctionLayout("pullout")}
+                  label="文章拉字"
+                />
+              </div>
 
-          <div className="w-8 h-px bg-white/10" />
-          <ToolIcon icon="🎯" onClick={resetView} label="重置視角 (R)" />
-        </aside>
+              <div className="w-8 h-px bg-white/10" />
 
-        <main
-          onWheel={handleWheel}
-          onMouseDown={handleMainMouseDown}
-          className={`flex-1 bg-[#0f0f0f] relative overflow-hidden flex items-center justify-center ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
-        >
-          <div
-            ref={canvasRef}
-            data-id="canvas-main-container"
-            className="relative shrink-0 shadow-[0_0_120px_rgba(0,0,0,1)] transition-all"
-            style={{
-              width: "1920px",
-              height: "1080px",
-              overflow: "hidden",
-              transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${previewScale})`,
-              transformOrigin: "center center",
-              backgroundColor: isExporting
-                ? "transparent"
-                : canvasBgVisible
-                  ? "#2a2a2a"
-                  : "#ffffff",
-              backgroundImage:
-                !canvasBgVisible && !isExporting
-                  ? `
+              <ToolIcon
+                icon="💾"
+                onClick={handleSaveProjectInitiate}
+                label="儲存專案 (Ctrl+Shift+S)"
+              />
+              <ToolIcon
+                icon="📂"
+                onClick={() => projectFileInputRef.current?.click()}
+                label="開啟專案 (Ctrl+Shift+O)"
+              />
+
+              <div className="w-8 h-px bg-white/10" />
+              <ToolIcon icon="🎯" onClick={resetView} label="重置視角 (R)" />
+            </aside>
+
+            <main
+              onWheel={handleWheel}
+              onMouseDown={handleMainMouseDown}
+              className={`flex-1 bg-[#0f0f0f] relative overflow-hidden flex items-center justify-center ${isPanning ? "cursor-grabbing" : "cursor-default"}`}
+            >
+              <div
+                ref={canvasRef}
+                data-id="canvas-main-container"
+                className="relative shrink-0 shadow-[0_0_120px_rgba(0,0,0,1)] transition-all"
+                style={{
+                  width: "1920px",
+                  height: "1080px",
+                  overflow: "hidden",
+                  transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${previewScale})`,
+                  transformOrigin: "center center",
+                  backgroundColor: isExporting
+                    ? "transparent"
+                    : canvasBgVisible
+                      ? "#2a2a2a"
+                      : "#ffffff",
+                  backgroundImage:
+                    !canvasBgVisible && !isExporting
+                      ? `
                   linear-gradient(45deg, #e5e5e5 25%, transparent 25%), 
                   linear-gradient(-45deg, #e5e5e5 25%, transparent 25%), 
                   linear-gradient(45deg, transparent 75%, #e5e5e5 75%), 
                   linear-gradient(-45deg, transparent 75%, #e5e5e5 75%)
                 `
-                  : "none",
-              backgroundSize: "20px 20px",
-            }}
-          >
-            {bgImageUrl && canvasBgVisible && (
-              <img
-                src={bgImageUrl}
-                alt="Background"
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
-                style={{ zIndex: 0 }}
-              />
-            )}
-            {assets.map(
-              (asset, index) =>
-                asset.visible && (asset.type !== 'block' || canvasBgVisible) && (
-                  <div
-                    key={asset.id}
-                    data-asset-id={asset.id}
-                    className="absolute flex items-start justify-start group/asset"
-                    style={{
-                      left: `${asset.x}px`,
-                      top: `${asset.y}px`,
-                      width: `${calculateAssetVisualBounds(asset).baseW}px`,
-                      height: `${calculateAssetVisualBounds(asset).baseH}px`,
-                      transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
-                      transformOrigin: "left top",
-                      zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
-                      opacity: asset.opacity,
-                      overflow: "visible",
-                    }}
-                  >
-                    {asset.type === "image" && (
+                      : "none",
+                  backgroundSize: "20px 20px",
+                }}
+              >
+                {bgImageUrl && canvasBgVisible && (
+                  <img
+                    src={bgImageUrl}
+                    alt="Background"
+                    className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none"
+                    style={{ zIndex: 0 }}
+                  />
+                )}
+                {assets.map(
+                  (asset, index) =>
+                    asset.visible && (asset.type !== 'block' || canvasBgVisible) && (
                       <div
-                        className="absolute -inset-[5px] border-[5px] border-white/50 opacity-0 hover:opacity-100 z-0 transition-opacity cursor-move"
-                        onMouseDown={(e) => handleAssetMouseDown(e, asset.id)}
-                      />
-                    )}
-
-                    <div
-                      className="relative w-full h-full z-10"
-                      onMouseDown={(e) => {
-                        if (asset.type === "image") {
-                          handleImageInnerMouseDown(e, asset.id);
-                        } else {
-                          handleAssetMouseDown(e, asset.id);
-                        }
-                      }}
-                      onWheel={(e) => {
-                        if (asset.type === "image")
-                          handleImageInnerWheel(e, asset.id);
-                      }}
-                      onContextMenu={(e) => {
-                        if (asset.type === "image")
-                          resetImageInnerTransform(e, asset.id);
-                      }}
-                      onDoubleClick={(e) => {
-                        if (asset.type === "image") {
-                          setReplacingAssetId(asset.id);
-                          fileInputRef.current?.click();
-                        }
-                      }}
-                    >
-                      <CGPreview
-                        data={asset as any}
-                        mode={
-                          asset.type === "title"
-                            ? "title"
-                            : asset.type === "block"
-                              ? "title"
-                              : "content"
-                        }
-                        isSelected={selectedAssetIds.includes(asset.id)}
-                        hasGlobalBg={!!bgImageUrl && canvasBgVisible}
-                      />
-                    </div>
-                    {/* 座標標示 (僅在預覽時顯示，不導出) */}
-                    {!isExporting && (
-                      <div className="absolute -top-7 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-sm backdrop-blur-md shadow-lg pointer-events-none select-none z-[100] border border-white/20 flex flex-col items-start gap-0.5 min-w-[60px]">
-                        <div className="font-bold border-b border-white/20 w-full pb-0.5 mb-0.5 opacity-80">{asset.name || asset.id}</div>
-                        <div className="flex gap-2">
-                          <span>X: <span className="text-yellow-400">{Math.round(asset.x)}</span></span>
-                          <span>Y: <span className="text-yellow-400">{Math.round(asset.y)}</span></span>
-                        </div>
+                        key={asset.id}
+                        data-asset-id={asset.id}
+                        className="absolute flex items-start justify-start group/asset"
+                        style={{
+                          left: `${asset.x}px`,
+                          top: `${asset.y}px`,
+                          width: `${calculateAssetVisualBounds(asset).baseW}px`,
+                          height: `${calculateAssetVisualBounds(asset).baseH}px`,
+                          transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
+                          transformOrigin: "left top",
+                          zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
+                          opacity: asset.opacity,
+                          overflow: "visible",
+                        }}
+                      >
                         {asset.type === "image" && (
-                          <div className="text-[9px] text-white/60">
-                            W/H: {Math.round(calculateAssetVisualBounds(asset).baseW * asset.scaleX)} x {Math.round(calculateAssetVisualBounds(asset).baseH * asset.scaleY)}
+                          <div
+                            className="absolute -inset-[5px] border-[5px] border-white/50 opacity-0 hover:opacity-100 z-0 transition-opacity cursor-move"
+                            onMouseDown={(e) => handleAssetMouseDown(e, asset.id)}
+                          />
+                        )}
+
+                        <div
+                          className="relative w-full h-full z-10"
+                          onMouseDown={(e) => {
+                            if (asset.type === "image") {
+                              handleImageInnerMouseDown(e, asset.id);
+                            } else {
+                              handleAssetMouseDown(e, asset.id);
+                            }
+                          }}
+                          onWheel={(e) => {
+                            if (asset.type === "image")
+                              handleImageInnerWheel(e, asset.id);
+                          }}
+                          onContextMenu={(e) => {
+                            if (asset.type === "image")
+                              resetImageInnerTransform(e, asset.id);
+                          }}
+                          onDoubleClick={(e) => {
+                            if (asset.type === "image") {
+                              setReplacingAssetId(asset.id);
+                              fileInputRef.current?.click();
+                            }
+                          }}
+                        >
+                          <CGPreview
+                            data={asset as any}
+                            mode={
+                              asset.type === "title"
+                                ? "title"
+                                : asset.type === "block"
+                                  ? "title"
+                                  : "content"
+                            }
+                            isSelected={selectedAssetIds.includes(asset.id)}
+                            hasGlobalBg={!!bgImageUrl && canvasBgVisible}
+                            isExporting={isExporting}
+                          />
+                        </div>
+                        {/* 座標標示 (僅在預覽時顯示，不導出) */}
+                        {!isExporting && (
+                          <div className="absolute -top-7 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-sm backdrop-blur-md shadow-lg pointer-events-none select-none z-[100] border border-white/20 flex flex-col items-start gap-0.5 min-w-[60px]">
+                            <div className="font-bold border-b border-white/20 w-full pb-0.5 mb-0.5 opacity-80">{asset.name || asset.id}</div>
+                            <div className="flex gap-2">
+                              <span>X: <span className="text-yellow-400">{Math.round(asset.x)}</span></span>
+                              <span>Y: <span className="text-yellow-400">{Math.round(asset.y)}</span></span>
+                            </div>
+                            {asset.type === "image" && (
+                              <div className="text-[9px] text-white/60">
+                                W/H: {Math.round(calculateAssetVisualBounds(asset).baseW * asset.scaleX)} x {Math.round(calculateAssetVisualBounds(asset).baseH * asset.scaleY)}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                ),
-            )}
-            {safetyVisible && !isExporting && (
-              <SafetyGuides opacity={safetyOpacity} />
-            )}
-            {marquee && (
-              <div
-                className="absolute marquee-drag border border-blue-400 bg-blue-500/10 z-[8500]"
-                style={{
-                  left: marquee.x,
-                  top: marquee.y,
-                  width: marquee.width,
-                  height: marquee.height,
-                }}
-              />
-            )}
-            {selectionBounds && !isExporting && (
-              <div
-                className="absolute marquee-box z-[8000] border-2 border-blue-500"
-                style={{
-                  left: selectionBounds.left,
-                  top: selectionBounds.top,
-                  width: selectionBounds.width,
-                  height: selectionBounds.height,
-                  pointerEvents: "none",
-                }}
-              >
-                {["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
+                    ),
+                )}
+                {safetyVisible && !isExporting && (
+                  <SafetyGuides opacity={safetyOpacity} />
+                )}
+                {marquee && (
                   <div
-                    key={h}
-                    onMouseDown={(e) => handleTransformMouseDown(e, h)}
-                    className={`absolute transform-handle w-3.5 h-3.5 bg-white border-2 border-blue-600 shadow-lg z-[8001] pointer-events-auto
+                    className="absolute marquee-drag border border-blue-400 bg-blue-500/10 z-[8500]"
+                    style={{
+                      left: marquee.x,
+                      top: marquee.y,
+                      width: marquee.width,
+                      height: marquee.height,
+                    }}
+                  />
+                )}
+                {selectionBounds && !isExporting && (
+                  <div
+                    className="absolute marquee-box z-[8000] border-2 border-blue-500"
+                    style={{
+                      left: selectionBounds.left,
+                      top: selectionBounds.top,
+                      width: selectionBounds.width,
+                      height: selectionBounds.height,
+                      pointerEvents: "none",
+                    }}
+                  >
+                    {["nw", "n", "ne", "e", "se", "s", "sw", "w"].map((h) => (
+                      <div
+                        key={h}
+                        onMouseDown={(e) => handleTransformMouseDown(e, h)}
+                        className={`absolute transform-handle w-3.5 h-3.5 bg-white border-2 border-blue-600 shadow-lg z-[8001] pointer-events-auto
                       ${h === "nw" ? "top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nw-resize" : ""}
                       ${h === "n" ? "top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-n-resize" : ""}
                       ${h === "ne" ? "top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-ne-resize" : ""}
@@ -3676,383 +3840,383 @@ const App: React.FC = () => {
                       ${h === "s" ? "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 cursor-s-resize" : ""}
                       ${h === "sw" ? "bottom-0 left-0 -translate-x-1/2 translate-y-1/2 cursor-sw-resize" : ""}
                       ${h === "w" ? "top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 cursor-w-resize" : ""}`}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </main>
-
-        {isBgPanelOpen && (
-          <div className="absolute left-[70px] top-[140px] w-80 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl z-[200] p-4 animate-in fade-in slide-in-from-left-2 duration-200">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400">
-                裝飾底圖選擇 (Background)
-              </h3>
-              <button
-                onClick={() => setIsBgPanelOpen(false)}
-                className="text-slate-600 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {BG_OPTIONS.map((bg, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setBgImageUrl(bg.url);
-                    setIsBgPanelOpen(false);
-                  }}
-                  className={`relative aspect-[16/9] rounded-md border-2 overflow-hidden transition-all group ${bgImageUrl === bg.url ? "border-blue-500 ring-2 ring-blue-500/30" : "border-white/5 hover:border-white/20"}`}
-                >
-                  {bg.url ? (
-                    <img
-                      src={bg.url}
-                      alt={bg.name}
-                      className="w-full h-full object-cover transition-transform group-hover:scale-110"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-black/40 text-xl">
-                      {bg.thumb}
-                    </div>
-                  )}
-                  <div className="absolute inset-x-0 bottom-0 bg-black/80 py-1 px-2 text-[8px] font-bold text-slate-300 truncate">
-                    {bg.name}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            <button
-              onClick={() => bgFileInputRef.current?.click()}
-              className="w-full py-2.5 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 rounded-md text-[9px] font-black uppercase tracking-widest text-blue-400 transition-all flex items-center justify-center gap-2"
-            >
-              📤 上傳自定義底圖
-            </button>
-          </div>
-        )}
-
-        <aside className="w-[340px] bg-[#1a1a1a] border-l border-black flex flex-col z-[100] shrink-0 overflow-y-auto custom-scrollbar">
-          <div className="p-6 space-y-8">
-            {firstSelectedAsset ? (
-              <div className="space-y-6">
-                {selectedAssetIds.length >= 2 && (
-                  <div className="space-y-4 pb-6 border-b border-white/5">
-                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-                      對齊工具 (Align)
-                    </div>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      <AlignButton
-                        onClick={() => alignSelectedAssets("left")}
-                        label="置左"
                       />
-                      <AlignButton
-                        onClick={() => alignSelectedAssets("h-center")}
-                        label="居中"
-                      />
-                      <AlignButton
-                        onClick={() => alignSelectedAssets("right")}
-                        label="置右"
-                      />
-                      <AlignButton
-                        onClick={() => alignSelectedAssets("h-dist")}
-                        label="均分"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-4 pt-4 border-t border-white/5">
-                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                    視覺主題 (Theme)
-                  </div>
-                  <div className="grid grid-cols-5 gap-1.5">
-                    {(Object.keys(THEMES) as CGTheme[]).map((t) => (
-                      <button
-                        key={t}
-                        onClick={() => updateSelectedAssets({ theme: t })}
-                        className={`h-8 rounded-sm border transition-all ${firstSelectedAsset.theme === t ? "border-blue-500 ring-1 ring-blue-500" : "border-white/10 bg-white/5"}`}
-                      >
-                        <div
-                          className={`w-full h-full bg-gradient-to-br ${THEMES[t].primary}`}
-                        />
-                      </button>
                     ))}
                   </div>
+                )}
+              </div>
+            </main>
+
+            {isBgPanelOpen && (
+              <div className="absolute left-[70px] top-[140px] w-80 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl z-[200] p-4 animate-in fade-in slide-in-from-left-2 duration-200">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                    裝飾底圖選擇 (Background)
+                  </h3>
+                  <button
+                    onClick={() => setIsBgPanelOpen(false)}
+                    className="text-slate-600 hover:text-white transition-colors"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                {(firstSelectedAsset.type === "title" ||
-                  firstSelectedAsset.type === "content" ||
-                  firstSelectedAsset.type === "stamp") && (
-                    <div className="space-y-4">
-                      <PropertySlider
-                        label="文字大小"
-                        value={firstSelectedAsset.size}
-                        min={12}
-                        max={300}
-                        unit="px"
-                        onChange={(v) => updateSelectedAssets({ size: v })}
-                      />
-                      <textarea
-                        className="w-full bg-[#0a0a0a] border border-white/5 rounded px-3 py-2 text-[12px] h-32 outline-none text-slate-100"
-                        value={
-                          firstSelectedAsset.text ||
-                          firstSelectedAsset.items?.join("\n")
-                        }
-                        onChange={(e) =>
-                          handleContentTextChange(
-                            firstSelectedAsset.id,
-                            e.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                  )}
-
-                {firstSelectedAsset.type === "image" && (
-                  <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  {BG_OPTIONS.map((bg, idx) => (
                     <button
+                      key={idx}
                       onClick={() => {
-                        setReplacingAssetId(firstSelectedAsset.id);
-                        fileInputRef.current?.click();
+                        setBgImageUrl(bg.url);
+                        setIsBgPanelOpen(false);
                       }}
-                      className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-blue-400"
+                      className={`relative aspect-[16/9] rounded-md border-2 overflow-hidden transition-all group ${bgImageUrl === bg.url ? "border-blue-500 ring-2 ring-blue-500/30" : "border-white/5 hover:border-white/20"}`}
                     >
-                      重新挑選圖片 (Replace)
+                      {bg.url ? (
+                        <img
+                          src={bg.url}
+                          alt={bg.name}
+                          className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-black/40 text-xl">
+                          {bg.thumb}
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-black/80 py-1 px-2 text-[8px] font-bold text-slate-300 truncate">
+                        {bg.name}
+                      </div>
                     </button>
-                    <button
-                      onClick={startPulloutSelection}
-                      className="w-full py-2 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-orange-400"
-                    >
-                      區域拉字 (Pull-out Zoom)
-                    </button>
-                  </div>
-                )}
+                  ))}
+                </div>
 
-                {firstSelectedAsset.type === "stamp" && (
-                  <div className="space-y-4 pt-4 border-t border-white/5">
-                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                      印章形狀 (Shape)
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() =>
-                          updateSelectedAssets({ stampShape: "explosion" })
-                        }
-                        className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "explosion" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
-                      >
-                        爆炸 (Explosion)
-                      </button>
-                      <button
-                        onClick={() =>
-                          updateSelectedAssets({ stampShape: "box" })
-                        }
-                        className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "box" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
-                      >
-                        方框 (Box)
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <PropertySlider
-                  label="整體透明度"
-                  value={firstSelectedAsset.opacity * 100}
-                  min={0}
-                  max={100}
-                  unit="%"
-                  onChange={(v) => updateSelectedAssets({ opacity: v / 100 })}
-                />
-              </div>
-            ) : (
-              <div className="py-24 text-center opacity-30 text-[9px] font-black uppercase tracking-widest">
-                選取圖層
+                <button
+                  onClick={() => bgFileInputRef.current?.click()}
+                  className="w-full py-2.5 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/30 rounded-md text-[9px] font-black uppercase tracking-widest text-blue-400 transition-all flex items-center justify-center gap-2"
+                >
+                  📤 上傳自定義底圖
+                </button>
               </div>
             )}
-          </div>
-          <div className="mt-auto flex flex-col bg-[#141414] border-t border-black min-h-[300px]">
-            <div className="h-9 flex items-center px-4 bg-[#1a1a1a] text-[9px] font-black text-slate-500 border-b border-black uppercase tracking-widest">
-              圖層管理 (Layers)
-            </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar pb-20">
-              {(() => {
-                const renderedGroups = new Set<string>();
-                const reversedAssets = [...assets].reverse();
-                return reversedAssets.map((a) => {
-                  if (a.groupId) {
-                    if (renderedGroups.has(a.groupId)) return null;
-                    renderedGroups.add(a.groupId);
 
-                    const groupAssets = assets.filter(
-                      (item) => item.groupId === a.groupId,
-                    );
-                    const isCollapsed = collapsedGroups.includes(a.groupId);
-                    const groupTitle = a.groupId.split("-")[0] || "群組";
-                    const isGroupSelected = groupAssets.every((ga) =>
-                      selectedAssetIds.includes(ga.id),
-                    );
-                    const isAnyGroupSelected = groupAssets.some((ga) =>
-                      selectedAssetIds.includes(ga.id),
-                    );
+            <aside className="w-[340px] bg-[#1a1a1a] border-l border-black flex flex-col z-[100] shrink-0 overflow-y-auto custom-scrollbar">
+              <div className="p-6 space-y-8">
+                {firstSelectedAsset ? (
+                  <div className="space-y-6">
+                    {selectedAssetIds.length >= 2 && (
+                      <div className="space-y-4 pb-6 border-b border-white/5">
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+                          對齊工具 (Align)
+                        </div>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          <AlignButton
+                            onClick={() => alignSelectedAssets("left")}
+                            label="置左"
+                          />
+                          <AlignButton
+                            onClick={() => alignSelectedAssets("h-center")}
+                            label="居中"
+                          />
+                          <AlignButton
+                            onClick={() => alignSelectedAssets("right")}
+                            label="置右"
+                          />
+                          <AlignButton
+                            onClick={() => alignSelectedAssets("h-dist")}
+                            label="均分"
+                          />
+                        </div>
+                      </div>
+                    )}
 
-                    return (
-                      <div key={a.groupId} className="border-b border-black/10">
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const groupIds = groupAssets.map((ga) => ga.id);
-                            setSelectedAssetIds(groupIds);
-                            setLastClickedId(groupIds[0]);
+                    <div className="space-y-4 pt-4 border-t border-white/5">
+                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                        視覺主題 (Theme)
+                      </div>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {(Object.keys(THEMES) as CGTheme[]).map((t) => (
+                          <button
+                            key={t}
+                            onClick={() => updateSelectedAssets({ theme: t })}
+                            className={`h-8 rounded-sm border transition-all ${firstSelectedAsset.theme === t ? "border-blue-500 ring-1 ring-blue-500" : "border-white/10 bg-white/5"}`}
+                          >
+                            <div
+                              className={`w-full h-full bg-gradient-to-br ${THEMES[t].primary}`}
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {(firstSelectedAsset.type === "title" ||
+                      firstSelectedAsset.type === "content" ||
+                      firstSelectedAsset.type === "stamp") && (
+                        <div className="space-y-4">
+                          <PropertySlider
+                            label="文字大小"
+                            value={firstSelectedAsset.size}
+                            min={12}
+                            max={300}
+                            unit="px"
+                            onChange={(v) => updateSelectedAssets({ size: v })}
+                          />
+                          <textarea
+                            className="w-full bg-[#0a0a0a] border border-white/5 rounded px-3 py-2 text-[12px] h-32 outline-none text-slate-100"
+                            value={
+                              firstSelectedAsset.text ||
+                              firstSelectedAsset.items?.join("\n")
+                            }
+                            onChange={(e) =>
+                              handleContentTextChange(
+                                firstSelectedAsset.id,
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </div>
+                      )}
+
+                    {firstSelectedAsset.type === "image" && (
+                      <div className="flex flex-col gap-2">
+                        <button
+                          onClick={() => {
+                            setReplacingAssetId(firstSelectedAsset.id);
+                            fileInputRef.current?.click();
                           }}
-                          className={`h-11 flex items-center px-4 cursor-pointer group/folder transition-colors ${isAnyGroupSelected ? "bg-blue-600/10" : "hover:bg-white/5"}`}
+                          className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-blue-400"
+                        >
+                          重新挑選圖片 (Replace)
+                        </button>
+                        <button
+                          onClick={startPulloutSelection}
+                          className="w-full py-2 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-orange-400"
+                        >
+                          區域拉字 (Pull-out Zoom)
+                        </button>
+                      </div>
+                    )}
+
+                    {firstSelectedAsset.type === "stamp" && (
+                      <div className="space-y-4 pt-4 border-t border-white/5">
+                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                          印章形狀 (Shape)
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() =>
+                              updateSelectedAssets({ stampShape: "explosion" })
+                            }
+                            className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "explosion" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
+                          >
+                            爆炸 (Explosion)
+                          </button>
+                          <button
+                            onClick={() =>
+                              updateSelectedAssets({ stampShape: "box" })
+                            }
+                            className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "box" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
+                          >
+                            方框 (Box)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <PropertySlider
+                      label="整體透明度"
+                      value={firstSelectedAsset.opacity * 100}
+                      min={0}
+                      max={100}
+                      unit="%"
+                      onChange={(v) => updateSelectedAssets({ opacity: v / 100 })}
+                    />
+                  </div>
+                ) : (
+                  <div className="py-24 text-center opacity-30 text-[9px] font-black uppercase tracking-widest">
+                    選取圖層
+                  </div>
+                )}
+              </div>
+              <div className="mt-auto flex flex-col bg-[#141414] border-t border-black min-h-[300px]">
+                <div className="h-9 flex items-center px-4 bg-[#1a1a1a] text-[9px] font-black text-slate-500 border-b border-black uppercase tracking-widest">
+                  圖層管理 (Layers)
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar pb-20">
+                  {(() => {
+                    const renderedGroups = new Set<string>();
+                    const reversedAssets = [...assets].reverse();
+                    return reversedAssets.map((a) => {
+                      if (a.groupId) {
+                        if (renderedGroups.has(a.groupId)) return null;
+                        renderedGroups.add(a.groupId);
+
+                        const groupAssets = assets.filter(
+                          (item) => item.groupId === a.groupId,
+                        );
+                        const isCollapsed = collapsedGroups.includes(a.groupId);
+                        const groupTitle = a.groupId.split("-")[0] || "群組";
+                        const isGroupSelected = groupAssets.every((ga) =>
+                          selectedAssetIds.includes(ga.id),
+                        );
+                        const isAnyGroupSelected = groupAssets.some((ga) =>
+                          selectedAssetIds.includes(ga.id),
+                        );
+
+                        return (
+                          <div key={a.groupId} className="border-b border-black/10">
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const groupIds = groupAssets.map((ga) => ga.id);
+                                setSelectedAssetIds(groupIds);
+                                setLastClickedId(groupIds[0]);
+                              }}
+                              className={`h-11 flex items-center px-4 cursor-pointer group/folder transition-colors ${isAnyGroupSelected ? "bg-blue-600/10" : "hover:bg-white/5"}`}
+                            >
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCollapsedGroups((prev) =>
+                                    isCollapsed
+                                      ? prev.filter((id) => id !== a.groupId)
+                                      : [...prev, a.groupId],
+                                  );
+                                }}
+                                className="mr-3 text-[10px] w-4 h-4 flex items-center justify-center opacity-40 hover:opacity-100 transition-transform duration-200"
+                                style={{
+                                  transform: isCollapsed
+                                    ? "rotate(-90deg)"
+                                    : "none",
+                                }}
+                              >
+                                ▼
+                              </button>
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                <span className="text-yellow-600">📁</span>{" "}
+                                {groupTitle}
+                              </span>
+                              <div className="ml-auto flex items-center gap-2 opacity-0 group-hover/folder:opacity-100">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const isAllVisible = groupAssets.every(
+                                      (ga) => ga.visible,
+                                    );
+                                    groupAssets.forEach((ga) =>
+                                      updateAsset(ga.id, {
+                                        visible: !isAllVisible,
+                                      }),
+                                    );
+                                  }}
+                                  className="text-xs opacity-60 hover:opacity-100"
+                                  title="群組顯示/隱藏"
+                                >
+                                  {groupAssets.every((ga) => ga.visible)
+                                    ? "👁️"
+                                    : "🕶️"}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    pushToHistory(assets);
+                                    setAssets((prev) =>
+                                      prev.filter(
+                                        (item) => item.groupId !== a.groupId,
+                                      ),
+                                    );
+                                    setSelectedAssetIds([]);
+                                  }}
+                                  className="text-[10px] text-slate-600 hover:text-red-500"
+                                  title="刪除群組"
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </div>
+                            {!isCollapsed && (
+                              <div className="bg-black/30">
+                                {groupAssets
+                                  .slice()
+                                  .reverse()
+                                  .map((ga) => (
+                                    <div
+                                      key={ga.id}
+                                      onClick={(e) => handleLayerClick(ga.id, e)}
+                                      className={`h-10 flex items-center pl-10 pr-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(ga.id) ? "bg-blue-600/20 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
+                                    >
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          updateAsset(ga.id, {
+                                            visible: !ga.visible,
+                                          });
+                                        }}
+                                        className={`mr-4 text-xs ${ga.visible ? "opacity-60" : "opacity-20"}`}
+                                      >
+                                        {ga.visible ? "👁️" : "🕶️"}
+                                      </button>
+                                      <span className="text-[9px] font-bold text-slate-500 truncate uppercase tracking-tight">
+                                        {ga.name}
+                                      </span>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedAssetIds([ga.id]);
+                                          deleteSelected();
+                                        }}
+                                        className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={a.id}
+                          onClick={(e) => handleLayerClick(a.id, e)}
+                          className={`h-11 flex items-center px-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(a.id) ? "bg-blue-600/15 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
                         >
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setCollapsedGroups((prev) =>
-                                isCollapsed
-                                  ? prev.filter((id) => id !== a.groupId)
-                                  : [...prev, a.groupId],
-                              );
+                              updateAsset(a.id, { visible: !a.visible });
                             }}
-                            className="mr-3 text-[10px] w-4 h-4 flex items-center justify-center opacity-40 hover:opacity-100 transition-transform duration-200"
-                            style={{
-                              transform: isCollapsed
-                                ? "rotate(-90deg)"
-                                : "none",
-                            }}
+                            className={`mr-4 text-xs ${a.visible ? "opacity-60" : "opacity-20"}`}
                           >
-                            ▼
+                            {a.visible ? "👁️" : "🕶️"}
                           </button>
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                            <span className="text-yellow-600">📁</span>{" "}
-                            {groupTitle}
+                          <span className="text-[10px] font-bold text-slate-400 truncate uppercase tracking-tight">
+                            {a.name}
                           </span>
-                          <div className="ml-auto flex items-center gap-2 opacity-0 group-hover/folder:opacity-100">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const isAllVisible = groupAssets.every(
-                                  (ga) => ga.visible,
-                                );
-                                groupAssets.forEach((ga) =>
-                                  updateAsset(ga.id, {
-                                    visible: !isAllVisible,
-                                  }),
-                                );
-                              }}
-                              className="text-xs opacity-60 hover:opacity-100"
-                              title="群組顯示/隱藏"
-                            >
-                              {groupAssets.every((ga) => ga.visible)
-                                ? "👁️"
-                                : "🕶️"}
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                pushToHistory(assets);
-                                setAssets((prev) =>
-                                  prev.filter(
-                                    (item) => item.groupId !== a.groupId,
-                                  ),
-                                );
-                                setSelectedAssetIds([]);
-                              }}
-                              className="text-[10px] text-slate-600 hover:text-red-500"
-                              title="刪除群組"
-                            >
-                              🗑️
-                            </button>
-                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedAssetIds([a.id]);
+                              deleteSelected();
+                            }}
+                            className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
+                          >
+                            🗑️
+                          </button>
                         </div>
-                        {!isCollapsed && (
-                          <div className="bg-black/30">
-                            {groupAssets
-                              .slice()
-                              .reverse()
-                              .map((ga) => (
-                                <div
-                                  key={ga.id}
-                                  onClick={(e) => handleLayerClick(ga.id, e)}
-                                  className={`h-10 flex items-center pl-10 pr-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(ga.id) ? "bg-blue-600/20 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
-                                >
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      updateAsset(ga.id, {
-                                        visible: !ga.visible,
-                                      });
-                                    }}
-                                    className={`mr-4 text-xs ${ga.visible ? "opacity-60" : "opacity-20"}`}
-                                  >
-                                    {ga.visible ? "👁️" : "🕶️"}
-                                  </button>
-                                  <span className="text-[9px] font-bold text-slate-500 truncate uppercase tracking-tight">
-                                    {ga.name}
-                                  </span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedAssetIds([ga.id]);
-                                      deleteSelected();
-                                    }}
-                                    className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
-                                  >
-                                    🗑️
-                                  </button>
-                                </div>
-                              ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={a.id}
-                      onClick={(e) => handleLayerClick(a.id, e)}
-                      className={`h-11 flex items-center px-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(a.id) ? "bg-blue-600/15 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
-                    >
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          updateAsset(a.id, { visible: !a.visible });
-                        }}
-                        className={`mr-4 text-xs ${a.visible ? "opacity-60" : "opacity-20"}`}
-                      >
-                        {a.visible ? "👁️" : "🕶️"}
-                      </button>
-                      <span className="text-[10px] font-bold text-slate-400 truncate uppercase tracking-tight">
-                        {a.name}
-                      </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedAssetIds([a.id]);
-                          deleteSelected();
-                        }}
-                        className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  );
-                });
-              })()}
-            </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </aside>
           </div>
-        </aside>
-      </div>
-    </div>
-  )}
-</>
-    );
-  };
+        </div>
+      )}
+    </>
+  );
+};
 
 const AlignButton = ({ onClick, label }: any) => (
   <button

@@ -131,10 +131,17 @@ export const CGPreview = memo(({
   const bgAlpha = data.bgOpacity ?? 1;
   const isTitle = mode === 'title' || data.type === 'block';
 
-  // 主標字型特效 (若是無底層且為主標題)
+  // 主標字型特效
   const isMainTitleNoBg = !hasGlobalBg && data.id.includes('title-main') && hasText;
-  const showStroke = isMainTitleNoBg ? true : data.showStroke;
-  const strokeWidth = isMainTitleNoBg ? 8 : data.strokeWidth;
+  const isMainTitleWithBg = hasGlobalBg && data.id.includes('title-main') && hasText;
+
+  let showStroke = data.showStroke;
+  let strokeWidth = data.strokeWidth;
+
+  if (isMainTitleNoBg || isMainTitleWithBg) {
+    showStroke = true;
+    strokeWidth = isMainTitleNoBg ? 8 : 4; 
+  }
 
   // 決定文字顏色與描邊顏色
   let textColor = data.textColor || ((isTitle && showBackground !== false) ? 'white' : theme.solid);
@@ -143,6 +150,17 @@ export const CGPreview = memo(({
   if (isMainTitleNoBg) {
     textColor = data.textColor || 'white';
     strokeColor = data.strokeColor || theme.solid;
+  } else if (isMainTitleWithBg) {
+    textColor = data.textColor || theme.solid;
+    strokeColor = data.strokeColor || 'white';
+  }
+
+  // 生成立體描邊效果
+  let finalTextShadow = showStroke ? getStrokeShadow(strokeWidth, strokeColor) : 'none';
+  if (isMainTitleWithBg && showStroke) {
+    // 增加白色輕微立體厚度 (往右下角延伸)
+    const extra3D = Array.from({length: 4}).map((_, i) => `${i + strokeWidth + 1}px ${i + strokeWidth + 1}px 0 ${strokeColor}`).join(', ');
+    finalTextShadow += `, ${extra3D}`;
   }
 
   // 核心對齊樣式
@@ -159,10 +177,10 @@ export const CGPreview = memo(({
     display: 'inline-block',
     textAlign: data.isVertical ? 'center' : (data.textAlign || 'left'),
     fontWeight: data.fontWeight || (mode === 'title' ? 900 : 500),
-    textShadow: showStroke ? getStrokeShadow(strokeWidth, strokeColor) : 'none',
+    textShadow: finalTextShadow,
     padding: 0,
     margin: 0,
-    transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), filter 0.2s ease, color 0.2s ease',
+    transition: 'filter 0.2s ease, color 0.2s ease',
   };
 
   const textHoverClass = "hover:scale-[1.03] hover:brightness-125 cursor-pointer active:scale-95";
@@ -234,7 +252,7 @@ export const CGPreview = memo(({
                 style={{
                   ...commonTextStyles,
                   transform: squeezeScale < 1 ? (data.isVertical ? `scaleY(${squeezeScale})` : `scaleX(${squeezeScale})`) : 'none',
-                  transformOrigin: data.isVertical ? 'top center' : 'left center',
+                  transformOrigin: data.isVertical ? 'top center' : (data.textAlign === 'center' ? 'center center' : (data.textAlign === 'right' ? 'right center' : 'left center')),
                 }} 
                 className={`uppercase tracking-tighter max-w-none ${data.isVertical ? '' : 'whitespace-nowrap'} ${textHoverClass}`}
               >
