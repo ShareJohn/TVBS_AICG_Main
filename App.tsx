@@ -2853,18 +2853,6 @@ const App: React.FC = () => {
               <div className="flex items-center gap-3">
                 <span className="text-sm font-bold text-white/50">前置作業與排版設定</span>
                 <div className="flex items-center gap-2">
-                  <button 
-                    onClick={handleRestart}
-                    className="text-[11px] font-black text-slate-400 hover:text-red-400 transition-all border border-white/10 px-4 py-2 rounded-lg hover:border-red-500/30 uppercase tracking-widest bg-white/5"
-                  >
-                    重新開始
-                  </button>
-                  <button 
-                    onClick={() => setIsExportModalOpen(true)}
-                    className="text-[11px] font-black text-white bg-red-600 hover:bg-red-500 transition-all px-4 py-2 rounded-lg shadow-lg uppercase tracking-widest active:scale-95"
-                  >
-                    輸出CG 🎞️
-                  </button>
                 </div>
               </div>
             </div>
@@ -3251,23 +3239,18 @@ const App: React.FC = () => {
           </div>
 
           <div className="border-t border-white/10 pt-6 mt-2 flex flex-col gap-3 pb-8">
-            {/* <button
-              onClick={() => setAppStage("editor")}
-              className="px-6 py-3 rounded-lg font-bold tracking-widest text-slate-400 hover:text-white hover:bg-white/5 transition-all text-xs w-full"
+            <button
+              onClick={() => setIsExportModalOpen(true)}
+              className="w-full px-6 py-4 rounded-xl font-black tracking-widest text-white text-base bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 shadow-[0_0_24px_rgba(59,130,246,0.5)] hover:shadow-[0_0_36px_rgba(59,130,246,0.7)] active:scale-95 transition-all uppercase flex items-center justify-center gap-2"
             >
-              直接建立空白畫布
+              輸出 CG 🎞️
             </button>
             <button
-              type="button"
-              onClick={handleStartEditing}
-              className={`px-8 py-3 rounded-lg font-black tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 w-full ${setupFormat || setupRawText.trim()
-                ? "bg-blue-600 text-white hover:bg-blue-500"
-                : "bg-white/5 text-white/20 cursor-not-allowed border border-white/10"
-                }`}
+              onClick={handleRestart}
+              className="w-full px-6 py-3 rounded-xl font-bold tracking-widest text-slate-400 hover:text-white text-sm border border-white/10 hover:border-white/20 bg-white/5 hover:bg-white/10 active:scale-95 transition-all uppercase"
             >
-              完成設定並進入編輯 🚀
-            </button> */}
-
+              重新開始
+            </button>
           </div>
         </div>
 

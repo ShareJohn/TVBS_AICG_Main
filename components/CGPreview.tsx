@@ -80,67 +80,6 @@ const getExplosionPath = (width: number, height: number, spikes = 20) => {
   return points.join(' ');
 };
 
-const BlurredBackground = ({ src, opacity }: { src: string, opacity: number }) => {
-  const canvasRef = React.useRef<HTMLCanvasElement>(null);
-
-  React.useEffect(() => {
-    let active = true;
-    if (!src || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-      if (!active) return;
-      canvas.width = 800; 
-      canvas.height = 600;
-      
-      const w = canvas.width;
-      const h = canvas.height;
-      const srcW = img.width;
-      const srcH = img.height;
-      
-      // 取原圖邊緣 5% 的像素厚度進行取樣，太少會產生像素雜訊點，太多會夾帶主圖內容
-      const edgeX = Math.max(1, Math.floor(srcW * 0.05));
-      const edgeY = Math.max(1, Math.floor(srcH * 0.05));
-
-      // 啟用內部極大模糊，製造環境光暈效果
-      ctx.filter = 'blur(40px)';
-
-      // 1. 擷取左邊緣，放大拉伸填滿背景的左半局
-      ctx.globalAlpha = 1.0;
-      ctx.drawImage(img, 0, 0, edgeX, srcH, -60, -60, w / 2 + 60, h + 120);
-      
-      // 2. 擷取右邊緣，放大拉伸填滿背景的右半局
-      ctx.drawImage(img, srcW - edgeX, 0, edgeX, srcH, w / 2, -60, w / 2 + 60, h + 120);
-      
-      // 3. 擷取上邊緣，疊加混合填滿上半局
-      ctx.globalAlpha = 0.5;
-      ctx.drawImage(img, 0, 0, srcW, edgeY, -60, -60, w + 120, h / 2 + 60);
-      
-      // 4. 擷取下邊緣，疊加混合填滿下半局
-      ctx.drawImage(img, 0, srcH - edgeY, srcW, edgeY, -60, h / 2, w + 120, h / 2 + 60);
-
-      // 最後關閉 blur，疊加上一層黑色半透明遮罩，加深亮度以襯托前方主圖
-      ctx.filter = 'none';
-      ctx.globalAlpha = 0.35;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, w, h);
-    };
-    img.src = src;
-    return () => { active = false; };
-  }, [src]);
-
-  return (
-    <canvas 
-      ref={canvasRef} 
-      className="absolute inset-0 w-full h-full object-cover pointer-events-none scale-[1.15]" 
-      style={{ opacity, zIndex: 0 }} 
-    />
-  );
-};
 
 export const CGPreview = memo(({
   data,
@@ -235,9 +174,6 @@ export const CGPreview = memo(({
         <div className="w-full h-full overflow-hidden relative" style={{ borderRadius: `${data.borderRadius}px` }}>
           {data.src ? (
             <>
-              {/* 底層：模糊且暗化的邊緣延伸圖 */}
-              <BlurredBackground src={data.src} opacity={data.bgOpacity} />
-
               {/* 頂層：可受控制與縮放的清晰原圖 */}
               <img
                 src={data.src}
