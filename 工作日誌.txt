@@ -1,5 +1,10 @@
 # TVBS PS CG Generator - 開發工作日誌
 
+> [!CRITICAL] 🚨 **AI 開發助理絕對禁止事項** 🚨
+> **不論任何理由，絕對禁止使用 `browser_subagent` 或是任何其他會「自動開啟瀏覽器」、「自動預覽」、「自動截圖」的測試指令。** 
+> 所有預覽與測試都必須由「使用者親自手動在自己的畫面上確認」。
+> 系統一律僅提供 `http://localhost:3000/` 讓使用者進入。不准替使用者檢查畫面！
+
 ## 專案資訊
 - **專案名稱**: PS News CG Generator
 - **開發路徑**: C:\Users\user\Desktop\aicg\TVBS PS
