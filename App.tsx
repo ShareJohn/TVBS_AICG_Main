@@ -3378,6 +3378,17 @@ const App: React.FC = () => {
                   key={f.id}
                   onClick={() => {
                     const next = setupFormat === f.id ? "" : f.id;
+
+                    if (next === "profile") {
+                      if (setupFormat === "double") {
+                        setSetupTitles((prev) => [...prev, ...Array(Math.max(0, 2 - prev.length)).fill(undefined)]);
+                        setSetupContents((prev) => [...prev, ...Array(Math.max(0, 2 - prev.length)).fill(undefined)]);
+                      } else if (setupFormat === "triple") {
+                        setSetupTitles((prev) => [...prev, ...Array(Math.max(0, 3 - prev.length)).fill(undefined)]);
+                        setSetupContents((prev) => [...prev, ...Array(Math.max(0, 3 - prev.length)).fill(undefined)]);
+                      }
+                    }
+
                     setSetupFormat(next);
                     if (next === "profile" && !bgImageUrl) {
                       setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%B0%8F%E6%AA%94%E6%A1%88)00.png");
