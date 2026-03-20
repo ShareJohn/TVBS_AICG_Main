@@ -1,0 +1,17 @@
+目前系統 (index.html) 導入的 Google Fonts 思源黑體 (Noto Sans TC) 字型粗細權重清單如下：
+
+1. 400 (Regular / 標準體)
+   - 對應 Tailwind class: font-normal
+   - 適用情境：一般小字體的內文閱讀
+
+2. 500 (Medium / 中黑體)
+   - 對應 Tailwind class: font-medium
+   - 適用情境：稍微需要強調的文字或副標題
+
+3. 700 (Bold / 粗體)
+   - 對應 Tailwind class: font-bold
+   - 適用情境：一般大標題、按鈕文字或醒目提示
+
+4. 900 (Black / 極粗體・特黑)
+   - 對應 Tailwind class: font-black
+   - 適用情境：新聞 CG 最醒目的主標題 (目前系統所有中文標題與內文的預設級別)
