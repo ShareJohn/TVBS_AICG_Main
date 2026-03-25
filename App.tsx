@@ -13,7 +13,7 @@ import html2canvas from "html2canvas";
 
 interface Asset {
   id: string;
-  type: "image" | "title" | "content" | "block" | "stamp";
+  type: "image" | "title" | "content" | "block" | "stamp" | "highlight";
   src?: string;
   text?: string;
   items?: string[];
@@ -55,6 +55,7 @@ interface Asset {
   textAlign?: 'left' | 'center' | 'right';
   customBgColor?: string;
   hideBorderLeft?: boolean;
+  linkedAssetIds?: string[];
 }
 
 interface SetupImage {
@@ -188,6 +189,24 @@ const App: React.FC = () => {
   const [imageHintVisible, setImageHintVisible] = useState(false);
   const [hasShownImageHint, setHasShownImageHint] = useState(false);
   const [mobileTab, setMobileTab] = useState<"form" | "preview">("form");
+  const [isHighlighterMode, setIsHighlighterMode] = useState(false);
+  const [setupHighlights, setSetupHighlights] = useState<any[]>([]);
+  const [selectedSetupHighlightId, setSelectedSetupHighlightId] = useState<string | null>(null);
+  const [highlightColor, setHighlightColor] = useState<"yellow" | "red" | "green">("yellow");
+  const [pulloutLineThickness, setPulloutLineThickness] = useState<number>(2);
+  const [pulloutLineStyle, setPulloutLineStyle] = useState<"solid" | "dashed">("dashed");
+  const [setupInjuryRotationIndex, setSetupInjuryRotationIndex] = useState(0);
+
+  const INJURY_BASE_IMAGES = [
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9600.png",
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9601.png",
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9602.png",
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9603.png",
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9604.png",
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9605.png",
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9606.png",
+    "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9607.png",
+  ];
 
   // Removed crop state
   const [replacingAssetId, setReplacingAssetId] = useState<string | null>(null);
@@ -219,7 +238,7 @@ const App: React.FC = () => {
   }, []);
 
   const recalculateProfileLayoutHeights = (currentAssets: Asset[]): Asset[] => {
-    const profileAssets = currentAssets.filter(a => a.layoutType === "profile");
+    const profileAssets = currentAssets.filter(a => a.layoutType === "profile" || a.layoutType === "injury");
     if (profileAssets.length === 0) return currentAssets;
 
     let newAssets = [...currentAssets];
@@ -256,7 +275,7 @@ const App: React.FC = () => {
         if (titleAssetIndex !== -1) {
           const tA = newAssets[titleAssetIndex];
           newAssets[titleAssetIndex] = { ...tA, y: currentY };
-          titleVisible = tA.visible ?? true;
+          titleVisible = tA.visible !== false && !!(tA.text && tA.text.trim().length > 0);
           const tSize = tA.size || 60;
           if (tA.autoWrap === false) {
             titleEstimatedHeight = tA.baseH || tSize;
@@ -273,19 +292,25 @@ const App: React.FC = () => {
           newAssets[contentAssetIndex] = { ...newAssets[contentAssetIndex], y: cY };
 
           const contentAsset = newAssets[contentAssetIndex];
-          const size = contentAsset.size || 40;
-          const charsPerLine = Math.max(1, Math.floor((contentAsset.baseW || 800) / size));
-          const items = contentAsset.items || [contentAsset.text || ""];
-          let totalLines = 0;
-          items.forEach(item => {
-            // Basic estimation for full-width chars
-            const lines = Math.ceil((item.length || 1) / charsPerLine);
-            totalLines += Math.max(1, lines);
-          });
+          const hasContent = contentAsset.items ? contentAsset.items.some(i => i.trim().length > 0) : !!(contentAsset.text && contentAsset.text.trim().length > 0);
+
+          if (!hasContent || contentAsset.visible === false) {
+            contentEstimatedHeight = 0;
+          } else {
+            const size = contentAsset.size || 40;
+            const charsPerLine = Math.max(1, Math.floor((contentAsset.baseW || 800) / size));
+            const items = contentAsset.items || [contentAsset.text || ""];
+            let totalLines = 0;
+            items.forEach(item => {
+              // Basic estimation for full-width chars
+              const lines = Math.ceil((item.length || 1) / charsPerLine);
+              totalLines += Math.max(1, lines);
+            });
 
 
-          const lineHeight = size * 1.5;
-          contentEstimatedHeight = totalLines * lineHeight + (items.length - 1) * 10;
+            const lineHeight = size * 1.5;
+            contentEstimatedHeight = totalLines * lineHeight + (items.length - 1) * 10;
+          }
         }
 
         currentY = cY + contentEstimatedHeight + 40; // 組與組之間的間距
@@ -298,7 +323,7 @@ const App: React.FC = () => {
   const calculateAssetVisualBounds = (
     asset: Asset,
   ): { baseW: number; baseH: number } => {
-    if (asset.type === "image")
+    if (asset.type === "image" || asset.type === "highlight")
       return { baseW: asset.baseW || 400, baseH: asset.baseH || 300 };
     const rowH = Math.max(1, asset.size * HEIGHT_FACTOR);
     if (asset.type === "block")
@@ -1361,16 +1386,20 @@ const App: React.FC = () => {
         setupImageIndex: imgIndexRef,
       };
 
-      // 5. 資料來源 (小標題上方，對齊小標題前緣往右5px)
+      const smallImgYOffset = (prefix === "三框" || (prefix === "雙框" && isDoubleTitleHorizontal)) ? 200 : 100;
+      const smallImgTargetH = (prefix === "三框" || (prefix === "雙框" && isDoubleTitleHorizontal)) ? 600 : 700;
+      const sourceY = smallImgYOffset + smallImgTargetH - 35; // 固定為小圖模式底部往上35px
+
+      // 5. 資料來源 (圖片右下角，座標固定於小圖模式)
       const sourceAsset: Asset | null = sourceText ? {
         id: `source-${assetUniqueId}`,
         type: "title",
         text: sourceText,
-        x: titleX + 5,
-        y: 545, // 小標題 y:580 的上方
+        x: x + 10,
+        y: sourceY,
         scaleX: 1,
         scaleY: 1,
-        baseW: titleWidth - 5,
+        baseW: w - 20,
         baseH: 32,
         opacity: 0.8,
         bgOpacity: 0,
@@ -1379,7 +1408,7 @@ const App: React.FC = () => {
         font: "'Noto Sans TC', sans-serif",
         size: 24,
         theme,
-        width: titleWidth - 5,
+        width: w - 20,
         letterSpacing: 0,
         borderRadius: 0,
         showBackground: false,
@@ -1390,7 +1419,7 @@ const App: React.FC = () => {
         strokeColor: "black",
         fontWeight: 500,
         autoWrap: false,
-        textAlign: 'left',
+        textAlign: 'right',
       } : null;
 
       return { topBar, img, title, content, source: sourceAsset };
@@ -1776,46 +1805,69 @@ const App: React.FC = () => {
           textAssets.push(rTitle, rContent);
         }
       } else {
-        // ... pullout logic remains mostly the same, moving it inside the else block
-        // 左側 (圖片區 - 回復原始位置)
+        // 文章拉字 版型
+        const leftW = 960;
+        const rightW = 960;
+        const rightStartX = leftW;
+
         const leftUniqueId = `${baseId}-left`;
-        const leftTopBar: Asset = {
-          id: `block-top-l-${leftUniqueId}`,
-          type: "block",
-          x: 0,
-          y: 0,
+        // Left top bar removed per user request
+
+        const existingMainTitlePullout = findExisting(`title-main-${leftUniqueId}`);
+        let finalMainTitleText = "文章拉字大標題";
+        if (customMainTitle !== undefined) {
+          finalMainTitleText = customMainTitle;
+        } else if (existingMainTitlePullout) {
+          finalMainTitleText = existingMainTitlePullout.text || finalMainTitleText;
+        }
+
+        const hasMainTitle = finalMainTitleText.trim() !== "";
+
+        const mainTitle: Asset = existingMainTitlePullout ? {
+          ...existingMainTitlePullout,
+          text: finalMainTitleText,
+          visible: hasMainTitle
+        } : {
+          id: `title-main-${leftUniqueId}`,
+          type: "title",
+          x: 140,
+          y: 60,
           scaleX: 1,
           scaleY: 1,
-          baseW: w,
+          baseW: 1400,
           baseH: 100,
           opacity: 1,
-          bgOpacity: 1.0,
-          name: `${prefix}左裝飾條`,
-          visible: true,
-          font: "",
-          size: 0,
+          bgOpacity: 1,
+          name: `${prefix}大標題`,
+          visible: hasMainTitle,
+          font: "'Noto Sans TC', sans-serif",
+          size: 110,
           theme,
-          width: w,
+          text: finalMainTitleText,
+          width: 1320,
           letterSpacing: 0,
           borderRadius: 0,
-          showBackground: true,
+          showBackground: false,
           showStroke: false,
           strokeWidth: 0,
-          groupId: mainGroupId,
+          autoWrap: false,
+          layoutType: "pullout",
+          fontWeight: 900,
         };
+
         const imgInfo2 = getNextImage();
         const imgData2 = imgInfo2?.data;
         const imgIndexRef2 = imgInfo2?.index;
         const sourceText2 = setupImageSources[imgIndexRef2 ?? 0] || "";
-        const imgYOffset2 = currentImageSizeMode === "large" ? 0 : 100;
-        const imgTargetH2 = currentImageSizeMode === "large" ? 1080 : 700;
+        const imgYOffset2 = currentImageSizeMode === "large" ? 0 : (hasMainTitle ? 211 : 100);
+        const imgTargetH2 = currentImageSizeMode === "large" ? 1080 : (hasMainTitle ? 589 : 700);
 
         let transform2 = imgData2?.transform || undefined;
         if (imgData2 && !transform2) {
           const natW = imgData2.width || 1;
           const natH = imgData2.height || 1;
-          const scale = Math.max(w / natW, imgTargetH2 / natH);
-          const tx = (w - natW * scale) / 2;
+          const scale = Math.max(leftW / natW, imgTargetH2 / natH);
+          const tx = (leftW - natW * scale) / 2;
           const ty = (imgTargetH2 - natH * scale) / 2;
           transform2 = { x: tx, y: ty, scale: scale };
         }
@@ -1834,7 +1886,7 @@ const App: React.FC = () => {
           y: imgYOffset2,
           scaleX: 1,
           scaleY: 1,
-          baseW: w,
+          baseW: leftW,
           baseH: imgTargetH2,
           opacity: 1,
           bgOpacity: 1.0,
@@ -1843,7 +1895,7 @@ const App: React.FC = () => {
           font: "",
           size: 0,
           theme,
-          width: w,
+          width: leftW,
           letterSpacing: 0,
           borderRadius: 0,
           showBackground: false,
@@ -1859,22 +1911,22 @@ const App: React.FC = () => {
         if (sourceText2) {
           textAssets.push({
             id: `source-l-${leftUniqueId}`,
-            type: "content",
-            items: [sourceText2],
+            type: "title",
+            text: sourceText2,
             x: 10,
-            y: 660,
+            y: 765, // 小圖模式的固定靠下邊界
             scaleX: 1,
             scaleY: 1,
-            baseW: w - 20,
+            baseW: leftW - 20,
             baseH: 30,
-            opacity: 0.75,
+            opacity: 0.8,
             bgOpacity: 0,
             name: `${prefix}資料來源`,
             visible: true,
             font: "'Noto Sans TC', sans-serif",
             size: 23,
             theme,
-            width: w - 20,
+            width: leftW - 20,
             letterSpacing: 0,
             borderRadius: 0,
             showBackground: false,
@@ -1882,119 +1934,305 @@ const App: React.FC = () => {
             strokeWidth: 3,
             groupId: mainGroupId,
             textColor: "white",
-            strokeColor: "black"
+            strokeColor: "black",
+            fontWeight: 500,
+            autoWrap: false,
+            layoutType: "pullout",
+            textAlign: "right"
           });
         }
 
-        // 右側 (文字區 - 移動到畫面約 1/2 高度, 左右內縮 15px)
-        const rightUniqueId = `${baseId}-right`;
-        const rightTopBar: Asset = {
-          id: `block-top-r-${rightUniqueId}`,
-          type: "block",
-          x: w,
-          y: 0,
+        decorationAssets = [];
+        imageAssets = [leftImg];
+        if (hasMainTitle) textAssets.push(mainTitle);
+
+        const numPairs = Math.max(setupHighlights.length, 1);
+        setupHighlights.forEach((hl, idx) => {
+          let rTitleY: number, rContentY: number;
+          if (numPairs === 1) {
+            rTitleY = 250;
+            rContentY = 334;
+          } else {
+            const maxInterval = (800 - 120 - 170) / (numPairs - 1);
+            const interval = Math.min(250, maxInterval);
+            rTitleY = 170 + idx * interval;
+            rContentY = rTitleY + 84;
+          }
+
+          const uId = hl.id;
+          const tId = `title-sh-${uId}`;
+          const cId = `content-sh-${uId}`;
+          const currentT = Array.isArray(customTitles) && customTitles.length > idx && customTitles[idx] !== undefined ? customTitles[idx] : `新增螢光筆重點${idx + 1}`;
+          const currentC = Array.isArray(customContents) && customContents.length > idx && customContents[idx] !== undefined ? customContents[idx] : `請輸入圈選重點說明${idx + 1}`;
+
+          const colorMap = {
+            yellow: { bg: "#fde047", stroke: "#facc15" },
+            red: { bg: "#fca5a5", stroke: "#ef4444" },
+            green: { bg: "#86efac", stroke: "#4ade80" },
+          };
+          const hc = colorMap[(hl.color as "yellow" | "red" | "green") || "yellow"];
+
+          const hasTitle = currentT.trim().length > 0;
+          const hasContent = currentC.trim().length > 0;
+
+          const actualContentY = hasTitle ? rContentY : rTitleY;
+          const linkedId = hasTitle ? tId : cId;
+
+          const hAsset: Asset = {
+            id: uId, type: "highlight", x: hl.x, y: hl.y, scaleX: 1, scaleY: 1, baseW: hl.width, baseH: hl.height,
+            opacity: 1, bgOpacity: 0.3, name: "螢光筆反白", visible: true, font: "", size: 0, theme, width: hl.width,
+            letterSpacing: 0, borderRadius: 8, showBackground: true, showStroke: false, strokeWidth: 2, customBgColor: hc.bg, strokeColor: hc.stroke,
+            linkedAssetIds: (hasTitle || hasContent) ? [linkedId] : []
+          };
+          const tAsset: Asset = {
+            id: tId, type: "title", text: currentT, x: 970, y: rTitleY, scaleX: 1, scaleY: 1, baseW: 780, baseH: 80,
+            opacity: 1, bgOpacity: 1, name: "螢光標題", visible: hasTitle, font: "'Noto Sans TC', sans-serif", size: 60, theme, width: 780,
+            letterSpacing: 0, borderRadius: 0, showBackground: false, showStroke: false, strokeWidth: 0, fontWeight: 500, layoutType: "profile"
+          };
+          const cAsset: Asset = {
+            id: cId, type: "content", items: [currentC], x: 970, y: actualContentY, scaleX: 1, scaleY: 1, baseW: 800, baseH: 150,
+            opacity: 1, bgOpacity: 1, name: "螢光摘要", visible: hasContent, font: "'Noto Sans TC', sans-serif", size: 40, theme, width: 720,
+            letterSpacing: 0, borderRadius: 0, showBackground: false, showStroke: false, strokeWidth: 0, autoWrap: true, textColor: "black", fontWeight: 500, layoutType: "profile"
+          };
+          textAssets.push(hAsset, tAsset, cAsset);
+        });
+      }
+    } else if (type === "injury") {
+      const uniqueId = `${baseId}-injury`;
+      const hasMainTitle = customMainTitle.trim() !== "";
+
+      // 1. 大標題
+      const mainTitle: Asset = {
+        id: `title-main-${uniqueId}`,
+        type: "title",
+        x: 140,
+        y: 60,
+        scaleX: 1,
+        scaleY: 1,
+        baseW: 1400,
+        baseH: 100,
+        opacity: 1,
+        bgOpacity: 1,
+        name: `傷勢圖大標題`,
+        visible: hasMainTitle,
+        font: "'Noto Sans TC', sans-serif",
+        size: 110,
+        theme: "default",
+        text: customMainTitle || "事故傷勢報告",
+        width: 1320,
+        letterSpacing: 0,
+        borderRadius: 0,
+        showBackground: true,
+        showStroke: false,
+        strokeWidth: 0,
+        autoWrap: false,
+        layoutType: "injury",
+        fontWeight: 900,
+        customBgColor: "#b91c1c", // red-700
+        textAlign: "center"
+      };
+
+      // 2. 人物主圖與底板
+      // 左側容器：寬 450, 高 800, 置中於左側 1/3
+      // 左側 1/3 中心 = 640 / 2 = 320
+      // 容器 X = 320 - (450/2) = 95
+      const injuryContainer: Asset = {
+        id: `bg-injury-${uniqueId}`,
+        type: "highlight",
+        x: 95,
+        y: 180,
+        scaleX: 1,
+        scaleY: 1,
+        baseW: 450,
+        baseH: 800,
+        opacity: 1,
+        bgOpacity: 1,
+        name: `傷勢圖背景底板`,
+        visible: true,
+        font: "",
+        size: 0,
+        theme,
+        width: 450,
+        letterSpacing: 0,
+        borderRadius: 24, // 3xl
+        showBackground: true,
+        showStroke: true,
+        strokeWidth: 1,
+        customBgColor: "rgba(30, 41, 59, 0.5)", // slate-800/50
+        strokeColor: "rgba(255, 255, 255, 0.1)", // white/10
+        layoutType: "injury_bg"
+      };
+
+      const injuryImg: Asset = {
+        id: `img-injury-${uniqueId}`,
+        type: "image",
+        src: INJURY_BASE_IMAGES[setupInjuryRotationIndex],
+        originalSrc: INJURY_BASE_IMAGES[setupInjuryRotationIndex],
+        x: 95, 
+        y: 180,
+        scaleX: 1,
+        scaleY: 1,
+        baseW: 450,
+        baseH: 800,
+        opacity: 1,
+        bgOpacity: 1.0,
+        name: `傷勢圖人物`,
+        visible: true,
+        font: "",
+        size: 0,
+        theme,
+        width: 450,
+        letterSpacing: 0,
+        borderRadius: 0,
+        showBackground: false,
+        showStroke: false,
+        strokeWidth: 0,
+        groupId: mainGroupId,
+        layoutType: "injury",
+        imageNaturalWidth: 800,
+        imageNaturalHeight: 800,
+        imageTransform: { x: 0, y: 0, scale: 1.5 } // 1.5x 縮放以符合參考專案比例
+      };
+
+      imageAssets = [injuryImg];
+      textAssets = [injuryContainer, mainTitle];
+
+      // 3. 傷勢點位與標籤 (點位使用 setupHighlights)
+      const numPoints = setupHighlights.length;
+      setupHighlights.forEach((hl, idx) => {
+        const pointId = `point-${hl.id}`;
+        const labelTitleId = `title-r${idx + 1}-${uniqueId}`;
+        const labelContentId = `content-r${idx + 1}-${uniqueId}`;
+        const pointLabelId = `point-idx-${hl.id}`;
+
+        const labelX = 970;
+        const interval = numPoints > 1 ? Math.min(250, (800 - 120 - 170) / (numPoints - 1)) : 250;
+        const labelYBase = numPoints === 1 ? 250 : (170 + idx * interval);
+
+        // 點位 Pin (w-5 h-5 in ref => 20x20)
+        const pointAsset: Asset = {
+          id: pointId,
+          type: "highlight",
+          x: hl.x,
+          y: hl.y,
           scaleX: 1,
           scaleY: 1,
-          baseW: w,
-          baseH: 100,
-          opacity: 1,
-          bgOpacity: 1.0,
-          name: `${prefix}右裝飾條`,
-          visible: true,
-          font: "",
-          size: 0,
-          theme,
-          width: w,
-          letterSpacing: 0,
-          borderRadius: 0,
-          showBackground: true,
-          showStroke: false,
-          strokeWidth: 0,
-          groupId: mainGroupId,
-        };
-        const rightMidBar: Asset = {
-          id: `block-mid-r-${rightUniqueId}`,
-          type: "block",
-          x: w,
-          y: 100,
-          scaleX: 1,
-          scaleY: 1,
-          baseW: w,
-          baseH: 600,
-          opacity: 1,
-          bgOpacity: 0.6,
-          name: `${prefix}右內底`,
-          visible: true,
-          font: "",
-          size: 0,
-          theme,
-          width: w,
-          letterSpacing: 0,
-          borderRadius: 0,
-          showBackground: true,
-          showStroke: false,
-          strokeWidth: 0,
-          groupId: mainGroupId,
-        };
-        const rightTitle: Asset = {
-          id: `title-r-${rightUniqueId}`,
-          type: "title",
-          text: customTitles[0] || `${prefix}主要標題`,
-          x: w + 150,
-          y: 480,
-          scaleX: 1,
-          scaleY: 1,
-          baseW: w - 300,
-          baseH: 100,
+          baseW: 24,
+          baseH: 24,
           opacity: 1,
           bgOpacity: 1,
-          name: `${prefix}標題`,
+          name: `傷勢點位 ${idx + 1}`,
+          visible: true,
+          font: "",
+          size: 0,
+          theme,
+          width: 24,
+          letterSpacing: 0,
+          borderRadius: 12,
+          showBackground: true,
+          showStroke: true,
+          strokeWidth: 2,
+          customBgColor: "#ef4444", // red-500
+          strokeColor: "white",
+          linkedAssetIds: [labelTitleId, labelContentId],
+          layoutType: "injury"
+        };
+
+        // 點位上的 P1, P2 標籤
+        const pointIndexLabel: Asset = {
+          id: pointLabelId,
+          type: "title",
+          text: `P${idx+1}`,
+          x: hl.x - 15,
+          y: hl.y - 35,
+          scaleX: 1,
+          scaleY: 1,
+          baseW: 54,
+          baseH: 24,
+          opacity: 1,
+          bgOpacity: 1,
+          name: `點位編號 ${idx + 1}`,
+          visible: true,
+          font: "'Noto Sans TC', sans-serif",
+          size: 20,
+          theme,
+          width: 54,
+          letterSpacing: 0,
+          borderRadius: 4,
+          showBackground: true,
+          showStroke: false,
+          strokeWidth: 0,
+          fontWeight: 900,
+          customBgColor: "#dc2626", // red-600
+          textColor: "white",
+          textAlign: "center"
+        };
+
+        const labelTitle: Asset = {
+          id: labelTitleId,
+          type: "title",
+          text: customTitles[idx] || `傷勢點 ${idx + 1}`,
+          x: labelX,
+          y: labelYBase,
+          scaleX: 1,
+          scaleY: 1,
+          baseW: 780,
+          baseH: 80,
+          opacity: 1,
+          bgOpacity: 1,
+          name: `傷勢標題 ${idx + 1}`,
           visible: true,
           font: "'Noto Sans TC', sans-serif",
           size: 60,
           theme,
-          width: w - 300,
+          width: 780,
           letterSpacing: 0,
           borderRadius: 0,
           showBackground: true,
           showStroke: false,
           strokeWidth: 0,
-          fontWeight: 500,
-        };
-        const rightContent: Asset = {
-          id: `content-r-${rightUniqueId}`,
-          type: "content",
-          items: [customContents[0] || "項目內容列表 01", "項目內容列表 02"],
-          x: w + 150,
-          y: 580,
-          scaleX: 1,
-          scaleY: 1,
-          baseW: w - 300,
-          baseH: 200,
-          opacity: 1,
-          bgOpacity: 1,
-          name: `${prefix}摘要`,
-          visible: true,
-          font: "'Noto Sans TC', sans-serif",
-          size: 36,
-          theme,
-          width: w - 300,
-          letterSpacing: 0,
-          borderRadius: 0,
-          showBackground: true,
-          showStroke: false,
-          strokeWidth: 0,
-          fontWeight: 500,
+          fontWeight: 900,
+          layoutType: "injury" // 使用專門的醫學風格
         };
 
-        decorationAssets = [leftTopBar, rightTopBar, rightMidBar];
-        imageAssets = [leftImg];
-        textAssets = [rightTitle, rightContent];
-      }
+        const labelContent: Asset = {
+          id: labelContentId,
+          type: "content",
+          items: [customContents[idx] || `輸入點位詳細說明`],
+          x: labelX,
+          y: labelYBase + 85,
+          scaleX: 1,
+          scaleY: 1,
+          baseW: 800,
+          baseH: 150,
+          opacity: 1,
+          bgOpacity: 1,
+          name: `傷勢內文 ${idx + 1}`,
+          visible: true,
+          font: "'Noto Sans TC', sans-serif",
+          size: 40,
+          theme,
+          width: 720,
+          letterSpacing: 0,
+          borderRadius: 0,
+          showBackground: false,
+          showStroke: false,
+          strokeWidth: 0,
+          autoWrap: true,
+          textColor: "white",
+          fontWeight: 500,
+          layoutType: "injury"
+        };
+
+        textAssets.push(pointAsset, pointIndexLabel, labelTitle, labelContent);
+      });
+    } else if (type === "social") {
+      // 社會 NCCG 版型 (目前與單框共用邏輯)
+      customCombinedAssets = generateLayoutAssets("profile", initialData, initialImages, theme, currentImageSizeMode, existingAssets);
     }
 
     let combinedAssets = customCombinedAssets || [...decorationAssets, ...imageAssets, ...textAssets];
-    if (type === "profile" || type === "pullout") {
+    if (type === "profile" || type === "pullout" || type === "social" || type === "injury") {
       combinedAssets = recalculateProfileLayoutHeights(combinedAssets);
     }
     return combinedAssets;
@@ -2261,7 +2499,7 @@ const App: React.FC = () => {
 
     try {
       await document.fonts.ready;
-      const steps: { name: string; filter: (a: Asset) => boolean; showBg: boolean }[] = [];
+      const steps: { name: string; filter: (a: Asset) => boolean; showBg: boolean; targetUId?: string; cumulativeUIds?: string[] }[] = [];
       const currentAssets = appStage === "setup" ? previewAssets : assets;
 
       // 1. 底圖 (永遠在最底層 00)
@@ -2271,10 +2509,33 @@ const App: React.FC = () => {
 
       // 2. 依次輸出圖層陣列中的所有元件 (包含裝飾層)
       let stepCounter = 1;
+      const processedHighlightIds = new Set<string>();
       currentAssets.forEach((asset) => {
+        if (!asset.visible) return;
+
         // 跳過資料來源的獨立圈層，我們將其附加在圖片輸出中
         if (asset.id.startsWith("source-")) {
           return;
+        }
+
+        if (asset.type === "highlight" || asset.id.includes("-sh-")) {
+          const match = asset.id.match(/(shl-\d+)/);
+          if (match) {
+            const hId = match[1];
+            if (processedHighlightIds.has(hId)) return;
+            processedHighlightIds.add(hId);
+
+            const layerIdx = stepCounter.toString().padStart(2, '0');
+            stepCounter++;
+
+            steps.push({
+              name: `${layerIdx}_螢光筆重點組`,
+              filter: (a) => a.id.includes(hId),
+              showBg: false,
+              targetUId: hId
+            });
+            return;
+          }
         }
 
         // 使用圖層順序 (1-based, 因 00 保留給底圖) 加上 0 補位確保排序正確
@@ -2335,6 +2596,23 @@ const App: React.FC = () => {
               bgImg.style.display = step.showBg ? "block" : "none";
             }
 
+            // 處理 SVG 指示線
+            clonedDoc.querySelectorAll('svg path, svg circle').forEach(el => {
+              const domEl = el as HTMLElement;
+              const domUId = domEl.getAttribute('data-uid');
+              if (step.targetUId) {
+                domEl.style.display = domUId === step.targetUId ? "block" : "none";
+                domEl.style.opacity = domUId === step.targetUId ? "1" : "0";
+              } else if (step.cumulativeUIds) {
+                let show = step.cumulativeUIds.includes(domUId || "");
+                domEl.style.display = show ? "block" : "none";
+                domEl.style.opacity = show ? "1" : "0";
+              } else {
+                domEl.style.display = "none";
+                domEl.style.opacity = "0";
+              }
+            });
+
             // 處理所有元件
             const currentAssets = appStage === "setup" ? previewAssets : assets;
             currentAssets.forEach(a => {
@@ -2388,7 +2666,7 @@ const App: React.FC = () => {
 
     try {
       await document.fonts.ready;
-      const steps: { name: string; filter: (a: Asset) => boolean; showBg: boolean }[] = [];
+      const steps: { name: string; filter: (a: Asset) => boolean; showBg: boolean; targetUId?: string; cumulativeUIds?: string[] }[] = [];
       const currentAssets = appStage === "setup" ? previewAssets : assets;
 
       // 1. 底圖
@@ -2399,9 +2677,35 @@ const App: React.FC = () => {
       // 2. 依次疊加元件
       let stepCounter = 1;
       const accumulatedIds: string[] = [];
+      const processedHighlightIds = new Set<string>();
 
       currentAssets.forEach((asset) => {
+        if (!asset.visible) return;
         if (asset.id.startsWith("source-")) return;
+
+        if (asset.type === "highlight" || asset.id.includes("-sh-")) {
+          const match = asset.id.match(/(shl-\d+)/);
+          if (match) {
+            const hId = match[1];
+            if (processedHighlightIds.has(hId)) return;
+            processedHighlightIds.add(hId);
+
+            const groupAssets = currentAssets.filter(a => a.id.includes(hId));
+            groupAssets.forEach(ga => accumulatedIds.push(ga.id));
+
+            const layerIdx = stepCounter.toString().padStart(2, '0');
+            stepCounter++;
+
+            const currentIds = [...accumulatedIds];
+            steps.push({
+              name: `${layerIdx}_疊加螢光筆重點`,
+              filter: (a) => currentIds.includes(a.id),
+              showBg: !!(bgImageUrl && canvasBgVisible),
+              cumulativeUIds: Array.from(processedHighlightIds)
+            });
+            return;
+          }
+        }
 
         accumulatedIds.push(asset.id);
         if (asset.type === 'image') {
@@ -2424,7 +2728,8 @@ const App: React.FC = () => {
         steps.push({
           name: `${layerIdx}_疊加至_${safeName}`,
           filter: (a) => currentIds.includes(a.id),
-          showBg: !!(bgImageUrl && canvasBgVisible)
+          showBg: !!(bgImageUrl && canvasBgVisible),
+          cumulativeUIds: Array.from(processedHighlightIds)
         });
       });
 
@@ -2457,6 +2762,23 @@ const App: React.FC = () => {
             if (bgImg) {
               bgImg.style.display = step.showBg ? "block" : "none";
             }
+
+            // 處理 SVG 指示線
+            clonedDoc.querySelectorAll('svg path, svg circle').forEach(el => {
+              const domEl = el as HTMLElement;
+              const domUId = domEl.getAttribute('data-uid');
+              if (step.targetUId) {
+                domEl.style.display = domUId === step.targetUId ? "block" : "none";
+                domEl.style.opacity = domUId === step.targetUId ? "1" : "0";
+              } else if (step.cumulativeUIds) {
+                let show = step.cumulativeUIds.includes(domUId || "");
+                domEl.style.display = show ? "block" : "none";
+                domEl.style.opacity = show ? "1" : "0";
+              } else {
+                domEl.style.display = "none";
+                domEl.style.opacity = "0";
+              }
+            });
 
             currentAssets.forEach(a => {
               const el = clonedDoc.querySelector(`[data-asset-id="${a.id}"]`) as HTMLElement;
@@ -2679,6 +3001,133 @@ const App: React.FC = () => {
     const asset = assets.find((a) => a.id === id);
     if (!asset || asset.type !== "image" || !asset.imageTransform) return;
 
+    if (isHighlighterMode) {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const startXC = (startX - rect.left) / previewScale;
+      const startYC = (startY - rect.top) / previewScale;
+
+      const onMove = (me: MouseEvent) => {
+        const currentXC = (me.clientX - rect.left) / previewScale;
+        const currentYC = (me.clientY - rect.top) / previewScale;
+        setMarquee({
+          x: Math.min(startXC, currentXC),
+          y: Math.min(startYC, currentYC),
+          width: Math.abs(currentXC - startXC),
+          height: Math.abs(currentYC - startYC),
+        });
+      };
+
+      const onUp = (me: MouseEvent) => {
+        const currentXC = (me.clientX - rect.left) / previewScale;
+        const currentYC = (me.clientY - rect.top) / previewScale;
+        const boxW = Math.abs(currentXC - startXC);
+        const boxH = Math.abs(currentYC - startYC);
+
+        if (boxW > 20 && boxH > 20) {
+          const tId = `title-${Date.now()}`;
+          const cId = `content-${Date.now()}`;
+          const hId = `highlight-${Date.now()}`;
+
+          const existingTexts = assets.filter(a => a.type === 'title' && a.id.includes('title-r'));
+          const rY = existingTexts.length > 0 ? Math.max(...existingTexts.map(a => a.y)) + 120 : 250;
+
+          const hAsset: Asset = {
+            id: hId,
+            type: "highlight",
+            x: Math.min(startXC, currentXC),
+            y: Math.min(startYC, currentYC),
+            scaleX: 1,
+            scaleY: 1,
+            baseW: boxW,
+            baseH: boxH,
+            opacity: 1,
+            bgOpacity: 0.3,
+            name: `螢光筆反白`,
+            visible: true,
+            font: "",
+            size: 0,
+            theme: "default",
+            width: boxW,
+            letterSpacing: 0,
+            borderRadius: 8,
+            showBackground: true,
+            showStroke: false,
+            strokeWidth: pulloutLineThickness,
+            customBgColor: highlightColor === "red" ? "#f87171" : highlightColor === "green" ? "#4ade80" : "#facc15",
+            strokeColor: highlightColor === "red" ? "#f87171" : highlightColor === "green" ? "#4ade80" : "#facc15",
+            linkedAssetIds: [tId],
+          };
+
+          const tAsset: Asset = {
+            id: tId,
+            type: "title",
+            text: `重點標題`,
+            x: 1280,
+            y: rY,
+            scaleX: 1,
+            scaleY: 1,
+            baseW: 560,
+            baseH: 80,
+            opacity: 1,
+            bgOpacity: 1,
+            name: `圈選標題`,
+            visible: true,
+            font: "'Noto Sans TC', sans-serif",
+            size: 48,
+            theme: "default",
+            width: 560,
+            letterSpacing: 0,
+            borderRadius: 0,
+            showBackground: false,
+            showStroke: false,
+            strokeWidth: 0,
+            fontWeight: 500,
+          };
+
+          const cAsset: Asset = {
+            id: cId,
+            type: "content",
+            items: [`請輸入圈選重點說明`],
+            x: 1280,
+            y: rY + 80,
+            scaleX: 1,
+            scaleY: 1,
+            baseW: 560,
+            baseH: 150,
+            opacity: 1,
+            bgOpacity: 1,
+            name: `圈選摘要`,
+            visible: true,
+            font: "'Noto Sans TC', sans-serif",
+            size: 28,
+            theme: "default",
+            width: 560,
+            letterSpacing: 0,
+            borderRadius: 0,
+            showBackground: false,
+            showStroke: false,
+            strokeWidth: 0,
+            autoWrap: true,
+            textColor: "black",
+            fontWeight: 500,
+          };
+
+          setAssets(prev => [...prev, hAsset, tAsset, cAsset]);
+        }
+        setMarquee(null);
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      return;
+    }
+
     setSelectedAssetIds([id]);
     setLastClickedId(id);
 
@@ -2802,6 +3251,146 @@ const App: React.FC = () => {
 
     const asset = assets.find((a) => a.id === id);
     if (!asset || asset.type !== "image" || !asset.imageTransform) return;
+
+    if (isHighlighterMode && e.touches.length === 1) {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const startXC = (e.touches[0].clientX - rect.left) / previewScale;
+      const startYC = (e.touches[0].clientY - rect.top) / previewScale;
+
+      const HTouchMove = (evt: TouchEvent) => {
+        if (evt.cancelable) evt.preventDefault();
+        evt.stopPropagation();
+        const currentTouches = Array.from(evt.touches) as unknown as React.Touch[];
+        if (currentTouches.length === 0) return;
+        const currentXC = (currentTouches[0].clientX - rect.left) / previewScale;
+        const currentYC = (currentTouches[0].clientY - rect.top) / previewScale;
+
+        setMarquee({
+          x: Math.min(startXC, currentXC),
+          y: Math.min(startYC, currentYC),
+          width: Math.abs(currentXC - startXC),
+          height: Math.abs(currentYC - startYC),
+        });
+      };
+
+      const HCleanup = () => {
+        window.removeEventListener("touchmove", HTouchMove);
+        window.removeEventListener("touchend", HTouchEnd);
+        window.removeEventListener("touchcancel", HTouchEnd);
+      };
+
+      const HTouchEnd = (evt: TouchEvent) => {
+        HCleanup();
+        if (activeTouchInteraction?.cleanup === HCleanup) {
+          activeTouchInteraction = null;
+        }
+        if (evt.changedTouches.length === 0) return;
+        const currentXC = (evt.changedTouches[0].clientX - rect.left) / previewScale;
+        const currentYC = (evt.changedTouches[0].clientY - rect.top) / previewScale;
+        const boxW = Math.abs(currentXC - startXC);
+        const boxH = Math.abs(currentYC - startYC);
+
+        if (boxW > 20 && boxH > 20) {
+          const tId = `title-${Date.now()}`;
+          const cId = `content-${Date.now()}`;
+          const hId = `highlight-${Date.now()}`;
+
+          const existingTexts = assets.filter(a => a.type === 'title' && a.id.includes('title-r'));
+          const rY = existingTexts.length > 0 ? Math.max(...existingTexts.map(a => a.y)) + 120 : 250;
+
+          const hAsset: Asset = {
+            id: hId,
+            type: "highlight",
+            x: Math.min(startXC, currentXC),
+            y: Math.min(startYC, currentYC),
+            scaleX: 1,
+            scaleY: 1,
+            baseW: boxW,
+            baseH: boxH,
+            opacity: 1,
+            bgOpacity: 0.3,
+            name: `螢光筆反白`,
+            visible: true,
+            font: "",
+            size: 0,
+            theme: "default",
+            width: boxW,
+            letterSpacing: 0,
+            borderRadius: 8,
+            showBackground: true,
+            showStroke: false,
+            strokeWidth: pulloutLineThickness,
+            customBgColor: highlightColor === "red" ? "#f87171" : highlightColor === "green" ? "#4ade80" : "#facc15",
+            strokeColor: highlightColor === "red" ? "#f87171" : highlightColor === "green" ? "#4ade80" : "#facc15",
+            linkedAssetIds: [tId],
+          };
+
+          const tAsset: Asset = {
+            id: tId,
+            type: "title",
+            text: `重點標題`,
+            x: 1280,
+            y: rY,
+            scaleX: 1,
+            scaleY: 1,
+            baseW: 560,
+            baseH: 80,
+            opacity: 1,
+            bgOpacity: 1,
+            name: `圈選標題`,
+            visible: true,
+            font: "'Noto Sans TC', sans-serif",
+            size: 48,
+            theme: "default",
+            width: 560,
+            letterSpacing: 0,
+            borderRadius: 0,
+            showBackground: false,
+            showStroke: false,
+            strokeWidth: 0,
+            fontWeight: 500,
+          };
+
+          const cAsset: Asset = {
+            id: cId,
+            type: "content",
+            items: [`請輸入圈選重點說明`],
+            x: 1280,
+            y: rY + 80,
+            scaleX: 1,
+            scaleY: 1,
+            baseW: 560,
+            baseH: 150,
+            opacity: 1,
+            bgOpacity: 1,
+            name: `圈選摘要`,
+            visible: true,
+            font: "'Noto Sans TC', sans-serif",
+            size: 28,
+            theme: "default",
+            width: 560,
+            letterSpacing: 0,
+            borderRadius: 0,
+            showBackground: false,
+            showStroke: false,
+            strokeWidth: 0,
+            autoWrap: true,
+            textColor: "black",
+            fontWeight: 500,
+          };
+
+          setAssets(prev => [...prev, hAsset, tAsset, cAsset]);
+        }
+        setMarquee(null);
+      };
+
+      activeTouchInteraction = { cleanup: HCleanup };
+      window.addEventListener("touchmove", HTouchMove, { passive: false });
+      window.addEventListener("touchend", HTouchEnd);
+      window.addEventListener("touchcancel", HTouchEnd);
+      return;
+    }
 
     setSelectedAssetIds([id]);
     setLastClickedId(id);
@@ -3135,6 +3724,8 @@ const App: React.FC = () => {
       setSetupImageSources([]);
       setSetupTheme("default");
       setAppStage("setup");
+      setIsHighlighterMode(false);
+      setSetupHighlights([]);
     }
   };
 
@@ -3189,8 +3780,7 @@ const App: React.FC = () => {
       imageSizeMode,
       assets.length > 0 ? assets : undefined
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setupFormat, setupMainTitle, setupTitles, setupContents, setupImages, setupImageSources, setupTheme, imageSizeMode, isDoubleTitleHorizontal, assets]);
+  }, [setupFormat, setupMainTitle, setupTitles, setupContents, setupImages, setupImageSources, setupTheme, imageSizeMode, isDoubleTitleHorizontal, assets, setupHighlights, setupInjuryRotationIndex]);
 
   const renderExportModal = () => (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[10000] flex items-center justify-center p-4">
@@ -3245,6 +3835,10 @@ const App: React.FC = () => {
       { id: "profile", name: "單框", icon: "◻" },
       { id: "double", name: "雙框", icon: "◫" },
       { id: "triple", name: "三框", icon: "▥" },
+      { id: "pullout", name: "文章拉字", icon: "▤" },
+      // 暫時隱藏
+      // { id: "injury", name: "傷勢圖", icon: "👤" },
+      // { id: "social", name: "社會 NCCG", icon: "📱" },
     ];
 
     const setupPreviewScale = typeof window !== "undefined"
@@ -3256,6 +3850,59 @@ const App: React.FC = () => {
     const handleSetupImageInnerMouseDown = (e: React.MouseEvent, index: number, asset: Asset) => {
       e.stopPropagation();
       e.preventDefault();
+
+      if (selectedSetupHighlightId) setSelectedSetupHighlightId(null);
+
+      if (isHighlighterMode && (setupFormat === "pullout" || setupFormat === "injury")) {
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const rect = setupCanvasRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const startXC = (startX - rect.left) / setupPreviewScale;
+        const startYC = (startY - rect.top) / setupPreviewScale;
+
+        const onMove = (me: MouseEvent) => {
+          if (setupFormat === "injury") return; // 傷勢圖不需要拉預覽框
+          const currentXC = (me.clientX - rect.left) / setupPreviewScale;
+          const currentYC = (me.clientY - rect.top) / setupPreviewScale;
+          setMarquee({
+            x: Math.min(startXC, currentXC),
+            y: Math.min(startYC, currentYC),
+            width: Math.abs(currentXC - startXC),
+            height: Math.abs(currentYC - startYC),
+          });
+        };
+
+        const onUp = (me: MouseEvent) => {
+          const currentXC = (me.clientX - rect.left) / setupPreviewScale;
+          const currentYC = (me.clientY - rect.top) / setupPreviewScale;
+          
+          if (setupFormat === "injury") {
+            // 傷勢圖模式：直接在點擊位置產生固定大小的 pin
+            setSetupHighlights(prev => [...prev, { 
+              id: `shl-${Date.now()}`, 
+              x: startXC - 20, // 置中
+              y: startYC - 20, 
+              width: 40, 
+              height: 40, 
+              color: "red" 
+            }]);
+          } else {
+            const boxW = Math.abs(currentXC - startXC);
+            const boxH = Math.abs(currentYC - startYC);
+            if (boxW > 20 && boxH > 20) {
+              setSetupHighlights(prev => [...prev, { id: `shl-${Date.now()}`, x: Math.min(startXC, currentXC), y: Math.min(startYC, currentYC), width: boxW, height: boxH, color: highlightColor }]);
+            }
+          }
+          setMarquee(null);
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onUp);
+        };
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+        return;
+      }
+
       const currentTransform = asset.imageTransform || { x: 0, y: 0, scale: 1 };
       const startX = e.clientX;
       const startY = e.clientY;
@@ -3291,6 +3938,7 @@ const App: React.FC = () => {
     const handleSetupImageInnerWheel = (e: React.WheelEvent<HTMLDivElement>, index: number, asset: Asset) => {
       e.stopPropagation();
       e.preventDefault();
+      if (isHighlighterMode && setupFormat === "pullout") return;
       const currentTransform = asset.imageTransform || { x: 0, y: 0, scale: 1 };
       const scaleDelta = -e.deltaY * 0.001 * currentTransform.scale;
       const newScale = Math.max(0.01, currentTransform.scale + scaleDelta);
@@ -3336,6 +3984,154 @@ const App: React.FC = () => {
       });
     };
 
+    const handleSetupHighlightMouseDown = (e: React.MouseEvent, id: string) => {
+      if (!isHighlighterMode) return;
+      e.stopPropagation();
+      e.preventDefault();
+      setSelectedSetupHighlightId(id);
+      const targetHl = setupHighlights.find(h => h.id === id);
+      if (!targetHl) return;
+      const initialHl = { ...targetHl };
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const onMove = (me: MouseEvent) => {
+        const dx = (me.clientX - startX) / setupPreviewScale;
+        const dy = (me.clientY - startY) / setupPreviewScale;
+        setSetupHighlights(prev => prev.map(h => h.id === id ? { ...h, x: initialHl.x + dx, y: initialHl.y + dy } : h));
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+
+    const handleSetupHighlightTouchStart = (e: React.TouchEvent, id: string) => {
+      if (!isHighlighterMode) return;
+      e.stopPropagation();
+      setSelectedSetupHighlightId(id);
+      const targetHl = setupHighlights.find(h => h.id === id);
+      if (!targetHl) return;
+      const initialHl = { ...targetHl };
+      const initialTouches = Array.from(e.touches) as React.Touch[];
+
+      let initialDistance = 0;
+      let initialCenter = { x: initialTouches[0].clientX, y: initialTouches[0].clientY };
+      if (initialTouches.length >= 2) {
+        initialDistance = Math.hypot(initialTouches[0].clientX - initialTouches[1].clientX, initialTouches[0].clientY - initialTouches[1].clientY);
+        initialCenter = { x: (initialTouches[0].clientX + initialTouches[1].clientX) / 2, y: (initialTouches[0].clientY + initialTouches[1].clientY) / 2 };
+      }
+
+      const onTouchMove = (evt: TouchEvent) => {
+        if (evt.cancelable) evt.preventDefault();
+        evt.stopPropagation();
+        const currentTouches = Array.from(evt.touches) as unknown as React.Touch[];
+        if (currentTouches.length === 0) return;
+
+        if (currentTouches.length === 1 && initialTouches.length === 1) {
+          const dx = (currentTouches[0].clientX - initialTouches[0].clientX) / setupPreviewScale;
+          const dy = (currentTouches[0].clientY - initialTouches[0].clientY) / setupPreviewScale;
+          setSetupHighlights(prev => prev.map(h => h.id === id ? { ...h, x: initialHl.x + dx, y: initialHl.y + dy } : h));
+        } else if (currentTouches.length >= 2 && initialDistance > 0) {
+          const dist = Math.hypot(currentTouches[0].clientX - currentTouches[1].clientX, currentTouches[0].clientY - currentTouches[1].clientY);
+          const center = { x: (currentTouches[0].clientX + currentTouches[1].clientX) / 2, y: (currentTouches[0].clientY + currentTouches[1].clientY) / 2 };
+          const scale = dist / initialDistance;
+          const newW = initialHl.width * scale;
+          const newH = initialHl.height * scale;
+          const dx = (center.x - initialCenter.x) / setupPreviewScale;
+          const dy = (center.y - initialCenter.y) / setupPreviewScale;
+          const newX = initialHl.x - (newW - initialHl.width) / 2 + dx;
+          const newY = initialHl.y - (newH - initialHl.height) / 2 + dy;
+          setSetupHighlights(prev => prev.map(h => h.id === id ? { ...h, x: newX, y: newY, width: newW, height: newH } : h));
+        }
+      };
+      const onUp = () => {
+        window.removeEventListener("touchmove", onTouchMove);
+        window.removeEventListener("touchend", onUp);
+        window.removeEventListener("touchcancel", onUp);
+      };
+      window.addEventListener("touchmove", onTouchMove, { passive: false });
+      window.addEventListener("touchend", onUp);
+      window.addEventListener("touchcancel", onUp);
+    };
+
+    const handleSetupHighlightResizeMouseDown = (e: React.MouseEvent, handleStr: string, id: string) => {
+      if (!isHighlighterMode) return;
+      e.stopPropagation();
+      e.preventDefault();
+      setSelectedSetupHighlightId(id);
+      const targetHl = setupHighlights.find(h => h.id === id);
+      if (!targetHl) return;
+      const initialHl = { ...targetHl };
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const onMove = (me: MouseEvent) => {
+        const dx = (me.clientX - startX) / setupPreviewScale;
+        const dy = (me.clientY - startY) / setupPreviewScale;
+        let { x, y, width, height } = initialHl;
+        if (handleStr.includes('e')) width = Math.max(20, initialHl.width + dx);
+        if (handleStr.includes('s')) height = Math.max(20, initialHl.height + dy);
+        if (handleStr.includes('w')) {
+          const delta = Math.min(initialHl.width - 20, dx);
+          width = initialHl.width - delta;
+          x = initialHl.x + delta;
+        }
+        if (handleStr.includes('n')) {
+          const delta = Math.min(initialHl.height - 20, dy);
+          height = initialHl.height - delta;
+          y = initialHl.y + delta;
+        }
+        setSetupHighlights(prev => prev.map(h => h.id === id ? { ...h, x, y, width, height } : h));
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+
+    const handleSetupHighlightResizeTouchStart = (e: React.TouchEvent, handleStr: string, id: string) => {
+      if (!isHighlighterMode) return;
+      e.stopPropagation();
+      setSelectedSetupHighlightId(id);
+      const targetHl = setupHighlights.find(h => h.id === id);
+      if (!targetHl) return;
+      const initialHl = { ...targetHl };
+      const touch = e.touches[0];
+      const startX = touch.clientX;
+      const startY = touch.clientY;
+      const onMove = (me: TouchEvent) => {
+        if (me.cancelable) me.preventDefault();
+        const t = me.touches[0];
+        const dx = (t.clientX - startX) / setupPreviewScale;
+        const dy = (t.clientY - startY) / setupPreviewScale;
+        let { x, y, width, height } = initialHl;
+        if (handleStr.includes('e')) width = Math.max(20, initialHl.width + dx);
+        if (handleStr.includes('s')) height = Math.max(20, initialHl.height + dy);
+        if (handleStr.includes('w')) {
+          const delta = Math.min(initialHl.width - 20, dx);
+          width = initialHl.width - delta;
+          x = initialHl.x + delta;
+        }
+        if (handleStr.includes('n')) {
+          const delta = Math.min(initialHl.height - 20, dy);
+          height = initialHl.height - delta;
+          y = initialHl.y + delta;
+        }
+        setSetupHighlights(prev => prev.map(h => h.id === id ? { ...h, x, y, width, height } : h));
+      };
+      const onUp = () => {
+        window.removeEventListener("touchmove", onMove);
+        window.removeEventListener("touchend", onUp);
+        window.removeEventListener("touchcancel", onUp);
+      };
+      window.addEventListener("touchmove", onMove, { passive: false });
+      window.addEventListener("touchend", onUp);
+      window.addEventListener("touchcancel", onUp);
+    };
+
     return (
       <div className="flex flex-col md:flex-row w-screen h-screen bg-[#080808] text-white overflow-hidden">
         {/* 左側：設定區塊 (手機下方，桌面左側) */}
@@ -3357,19 +4153,21 @@ const App: React.FC = () => {
                 <span className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-xs">1</span>
                 選擇預設版型
               </h2>
-              <div className="flex items-center gap-2 cursor-pointer hover:bg-white/5 px-2 py-1 rounded transition-colors" onClick={() => setSafetyVisible(!safetyVisible)}>
-                <span className="text-[10px] text-slate-400 font-bold tracking-wider pt-0.5">
-                  即時預覽對位框
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setSafetyVisible(!safetyVisible); }}
-                  className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${safetyVisible ? "bg-blue-600" : "bg-slate-600"}`}
-                >
-                  <span
-                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${safetyVisible ? "translate-x-3.5" : "translate-x-0.5"}`}
-                  />
-                </button>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 cursor-pointer hover:bg-white/5 px-2 py-1 rounded transition-colors" onClick={() => setSafetyVisible(!safetyVisible)}>
+                  <span className="text-[10px] text-slate-400 font-bold tracking-wider pt-0.5">
+                    即時預覽對位框
+                  </span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSafetyVisible(!safetyVisible); }}
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${safetyVisible ? "bg-blue-600" : "bg-slate-600"}`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${safetyVisible ? "translate-x-3.5" : "translate-x-0.5"}`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
@@ -3394,6 +4192,16 @@ const App: React.FC = () => {
                       setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%B0%8F%E6%AA%94%E6%A1%88)00.png");
                     } else if ((next === "double" || next === "triple") && !bgImageUrl) {
                       setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%AF%86%E7%B6%B2%E7%99%BD).jpg");
+                    } else if (next === "pullout" && !bgImageUrl) {
+                      setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%B0%8F%E6%AA%94%E6%A1%88)03.png");
+                      setCanvasBgVisible(true);
+                    } else if (next === "injury" && !bgImageUrl) {
+                      setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%AF%86%E7%B6%B2%E7%99%BD).jpg");
+                      setCanvasBgVisible(true);
+                    }
+
+                    if (next === "pullout" || next === "injury") {
+                      setIsHighlighterMode(true);
                     }
                   }}
                   className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${setupFormat === f.id
@@ -3512,255 +4320,391 @@ const App: React.FC = () => {
           </div>
 
           {/* --------- 3 文字內容輸入 --------- */}
-          <div className="space-y-6">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-xs">3</span>
-              文字內容輸入
-            </h2>
+          <div className={setupFormat === "pullout" ? "grid grid-cols-2 gap-4" : "space-y-6"}>
+            <div className={`space-y-6 ${setupFormat === "pullout" ? "min-w-0" : ""}`}>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-xs">3</span>
+                文字內容輸入
+              </h2>
 
-            {!setupFormat ? (
-              <div className="flex items-center justify-center p-8 border border-dashed border-white/10 rounded-xl bg-white/5">
-                <span className="text-sm font-bold text-slate-500 tracking-wider">請先選擇上方的「預設版型」</span>
-              </div>
-            ) : (
-              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {/* 大標題 */}
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">大標題</label>
-                  <input
-                    type="text"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none transition-all"
-                    placeholder="輸入主標題..."
-                    value={setupMainTitle ?? (setupFormat === "triple" ? "三框大標題" : setupFormat === "double" ? "雙框大標題" : "單框大標題")}
-                    onChange={(e) => setSetupMainTitle(e.target.value)}
-                  />
+              {!setupFormat ? (
+                <div className="flex items-center justify-center p-8 border border-dashed border-white/10 rounded-xl bg-white/5">
+                  <span className="text-sm font-bold text-slate-500 tracking-wider">請先選擇上方的「預設版型」</span>
                 </div>
+              ) : (
+                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {/* 大標題 */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">大標題</label>
+                    <input
+                      type="text"
+                      className="w-full bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none transition-all"
+                      placeholder="輸入主標題..."
+                      value={setupMainTitle ?? (setupFormat === "triple" ? "三框大標題" : setupFormat === "double" ? "雙框大標題" : "單框大標題")}
+                      onChange={(e) => setSetupMainTitle(e.target.value)}
+                    />
+                  </div>
 
-                {/* 根據版型生成的動態區塊 */}
-                {setupFormat === "double" ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between bg-white/5 px-4 py-2.5 rounded-xl border border-white/10">
-                      <label className="text-xs text-slate-300 font-bold tracking-widest">大標題排版設定</label>
-                      <div className="flex gap-2 bg-black/30 p-1 rounded-lg">
-                        <button
-                          className={`px-3 py-1.5 rounded transition-colors text-xs tracking-wider ${!isDoubleTitleHorizontal ? "bg-blue-600 text-white font-bold shadow-md" : "text-slate-400 hover:text-white"
-                            }`}
-                          onClick={() => setIsDoubleTitleHorizontal(false)}
-                        >
-                          直書 (側邊置中)
-                        </button>
-                        <button
-                          className={`px-3 py-1.5 rounded transition-colors text-xs tracking-wider ${isDoubleTitleHorizontal ? "bg-blue-600 text-white font-bold shadow-md" : "text-slate-400 hover:text-white"
-                            }`}
-                          onClick={() => setIsDoubleTitleHorizontal(true)}
-                        >
-                          橫書 (頂部置中)
-                        </button>
+                  {/* 根據版型生成的動態區塊 */}
+                  {setupFormat === "double" ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between bg-white/5 px-4 py-2.5 rounded-xl border border-white/10">
+                        <label className="text-xs text-slate-300 font-bold tracking-widest">大標題排版設定</label>
+                        <div className="flex gap-2 bg-black/30 p-1 rounded-lg">
+                          <button
+                            className={`px-3 py-1.5 rounded transition-colors text-xs tracking-wider ${!isDoubleTitleHorizontal ? "bg-blue-600 text-white font-bold shadow-md" : "text-slate-400 hover:text-white"
+                              }`}
+                            onClick={() => setIsDoubleTitleHorizontal(false)}
+                          >
+                            直書 (側邊置中)
+                          </button>
+                          <button
+                            className={`px-3 py-1.5 rounded transition-colors text-xs tracking-wider ${isDoubleTitleHorizontal ? "bg-blue-600 text-white font-bold shadow-md" : "text-slate-400 hover:text-white"
+                              }`}
+                            onClick={() => setIsDoubleTitleHorizontal(true)}
+                          >
+                            橫書 (頂部置中)
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[0, 1].map((i) => {
+                          const contentText = setupContents[i] ?? (i === 0 ? "內文左" : "內文右");
+                          const contentLines = contentText.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 18)), 0);
+                          const isAtLimit = contentLines >= 3;
+
+                          return (
+                            <div key={i} className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/5">
+                              <label className="text-[10px] font-black tracking-widest flex items-center justify-between">
+                                <span className="text-blue-400">區塊 {i === 0 ? "左" : "右"}</span>
+                                <span className={isAtLimit ? "text-red-400 bg-red-500/20 px-1 py-0.5 rounded shadow-[0_0_10px_rgba(239,68,68,0.2)]" : "text-slate-500"}>
+                                  {contentLines} / 3 行
+                                </span>
+                              </label>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-500 font-bold">小標題</label>
+                                <input
+                                  type="text"
+                                  maxLength={15}
+                                  className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-xs outline-none focus:border-blue-500 transition-colors"
+                                  value={setupTitles[i] ?? (i === 0 ? "小標題左" : "小標題右")}
+                                  onChange={(e) => {
+                                    const newT = [...setupTitles];
+                                    newT[i] = e.target.value;
+                                    setSetupTitles(newT);
+                                  }}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-500 font-bold">雙框內文</label>
+                                <textarea
+                                  className={`w-full h-20 bg-black/30 border ${isAtLimit ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-md p-2 text-xs outline-none resize-none transition-colors`}
+                                  value={contentText}
+                                  onChange={(e) => {
+                                    const newVal = e.target.value;
+                                    const newLines = newVal.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 18)), 0);
+                                    if (newLines > 3 && newVal.length > (setupContents[i]?.length || 0)) {
+                                      return; // Stop typing if it exceeds 3 lines
+                                    }
+                                    const newC = [...setupContents];
+                                    newC[i] = newVal;
+                                    setSetupContents(newC);
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {[0, 1].map((i) => {
-                        const contentText = setupContents[i] ?? (i === 0 ? "內文左" : "內文右");
-                        const contentLines = contentText.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 18)), 0);
-                        const isAtLimit = contentLines >= 3;
+                  ) : setupFormat === "triple" ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-3 gap-2">
+                        {[0, 1, 2].map((i) => {
+                          const contentText = setupContents[i] ?? `內文${i === 0 ? '左' : i === 1 ? '中' : '右'}`;
+                          const contentLines = contentText.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 10)), 0);
+                          const isAtLimit = contentLines >= 3;
 
-                        return (
-                          <div key={i} className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/5">
-                            <label className="text-[10px] font-black tracking-widest flex items-center justify-between">
-                              <span className="text-blue-400">區塊 {i === 0 ? "左" : "右"}</span>
-                              <span className={isAtLimit ? "text-red-400 bg-red-500/20 px-1 py-0.5 rounded shadow-[0_0_10px_rgba(239,68,68,0.2)]" : "text-slate-500"}>
-                                {contentLines} / 3 行
-                              </span>
-                            </label>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] text-slate-500 font-bold">小標題</label>
-                              <input
-                                type="text"
-                                maxLength={15}
-                                className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-xs outline-none focus:border-blue-500 transition-colors"
-                                value={setupTitles[i] ?? (i === 0 ? "小標題左" : "小標題右")}
-                                onChange={(e) => {
-                                  const newT = [...setupTitles];
-                                  newT[i] = e.target.value;
-                                  setSetupTitles(newT);
-                                }}
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] text-slate-500 font-bold">雙框內文</label>
-                              <textarea
-                                className={`w-full h-20 bg-black/30 border ${isAtLimit ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-md p-2 text-xs outline-none resize-none transition-colors`}
-                                value={contentText}
-                                onChange={(e) => {
-                                  const newVal = e.target.value;
-                                  const newLines = newVal.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 18)), 0);
-                                  if (newLines > 3 && newVal.length > (setupContents[i]?.length || 0)) {
-                                    return; // Stop typing if it exceeds 3 lines
-                                  }
-                                  const newC = [...setupContents];
-                                  newC[i] = newVal;
-                                  setSetupContents(newC);
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : setupFormat === "triple" ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-3 gap-2">
-                      {[0, 1, 2].map((i) => {
-                        const contentText = setupContents[i] ?? `內文${i === 0 ? '左' : i === 1 ? '中' : '右'}`;
-                        const contentLines = contentText.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 10)), 0);
-                        const isAtLimit = contentLines >= 3;
-
-                        return (
-                          <div key={i} className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/5">
-                            <label className="text-[10px] font-black tracking-widest flex items-center justify-between">
-                              <span className="text-blue-400">{i === 0 ? "左側" : i === 1 ? "中間" : "右側"}</span>
-                              <span className={isAtLimit ? "text-red-400 bg-red-500/20 px-1 py-0.5 rounded shadow-[0_0_10px_rgba(239,68,68,0.2)]" : "text-slate-500"}>
-                                {contentLines} / 3 行
-                              </span>
-                            </label>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] text-slate-500 font-bold">小標題</label>
-                              <input
-                                type="text"
-                                maxLength={10}
-                                placeholder="標題"
-                                className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-[10px] outline-none focus:border-blue-500 transition-colors"
-                                value={setupTitles[i] ?? `小標題${i === 0 ? '左' : i === 1 ? '中' : '右'}`}
-                                onChange={(e) => {
-                                  const newT = [...setupTitles];
-                                  newT[i] = e.target.value;
-                                  setSetupTitles(newT);
-                                }}
-                              />
-                            </div>
-                            <div className="space-y-1.5">
-                              <label className="text-[10px] text-slate-500 font-bold">三框內文</label>
-                              <textarea
-                                placeholder="內文"
-                                className={`w-full h-20 bg-black/30 border ${isAtLimit ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-md p-2 text-[10px] outline-none resize-none transition-colors`}
-                                value={contentText}
-                                onChange={(e) => {
-                                  const newVal = e.target.value;
-                                  const newLines = newVal.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 10)), 0);
-                                  if (newLines > 3 && newVal.length > (setupContents[i]?.length || 0)) {
-                                    return; // 攔截超過 3 行的輸入
-                                  }
-                                  const newC = [...setupContents];
-                                  newC[i] = newVal;
-                                  setSetupContents(newC);
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {(() => {
-                      const isSingleType = setupFormat === "profile" || setupFormat === "pullout";
-                      const groupCount = Math.max(1, setupTitles.length, setupContents.length);
-                      const maxContentLines = isSingleType ? 14 - groupCount * 2 : 999;
-                      const currentContentLines = isSingleType ? setupContents.reduce((acc, c) => {
-                        if (!c || typeof c !== 'string') return acc;
-                        return acc + c.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 20)), 0);
-                      }, 0) : 0;
-                      const isNearLimit = currentContentLines >= maxContentLines - 2;
-
-                      return (
-                        <>
-                          {isSingleType && (
-                            <div className={`text-[10px] font-bold tracking-widest px-3 py-2 rounded-lg border flex items-center justify-between transition-all ${currentContentLines >= maxContentLines ? 'bg-red-500/20 text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : isNearLimit ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50' : 'bg-white/5 text-slate-400 border-white/10'}`}>
-                              <span>全域內文空間監測</span>
-                              <div className="flex items-center gap-2">
-                                <span>{currentContentLines} / {maxContentLines} 行</span>
-                                {currentContentLines >= maxContentLines && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded text-[9px] animate-pulse">已達安全上限</span>}
+                          return (
+                            <div key={i} className="space-y-3 p-3 bg-white/5 rounded-xl border border-white/5">
+                              <label className="text-[10px] font-black tracking-widest flex items-center justify-between">
+                                <span className="text-blue-400">{i === 0 ? "左側" : i === 1 ? "中間" : "右側"}</span>
+                                <span className={isAtLimit ? "text-red-400 bg-red-500/20 px-1 py-0.5 rounded shadow-[0_0_10px_rgba(239,68,68,0.2)]" : "text-slate-500"}>
+                                  {contentLines} / 3 行
+                                </span>
+                              </label>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-500 font-bold">小標題</label>
+                                <input
+                                  type="text"
+                                  maxLength={10}
+                                  placeholder="標題"
+                                  className="w-full bg-black/30 border border-white/10 rounded-md p-2 text-[10px] outline-none focus:border-blue-500 transition-colors"
+                                  value={setupTitles[i] ?? `小標題${i === 0 ? '左' : i === 1 ? '中' : '右'}`}
+                                  onChange={(e) => {
+                                    const newT = [...setupTitles];
+                                    newT[i] = e.target.value;
+                                    setSetupTitles(newT);
+                                  }}
+                                />
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-[10px] text-slate-500 font-bold">三框內文</label>
+                                <textarea
+                                  placeholder="內文"
+                                  className={`w-full h-20 bg-black/30 border ${isAtLimit ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-md p-2 text-[10px] outline-none resize-none transition-colors`}
+                                  value={contentText}
+                                  onChange={(e) => {
+                                    const newVal = e.target.value;
+                                    const newLines = newVal.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 10)), 0);
+                                    if (newLines > 3 && newVal.length > (setupContents[i]?.length || 0)) {
+                                      return; // 攔截超過 3 行的輸入
+                                    }
+                                    const newC = [...setupContents];
+                                    newC[i] = newVal;
+                                    setSetupContents(newC);
+                                  }}
+                                />
                               </div>
                             </div>
-                          )}
-                          {(setupTitles.length > 0 ? setupTitles : [undefined as any]).map((title, i) => {
-                            if (setupFormat !== "profile" && i > 0) return null;
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {(() => {
+                        const isSingleType = setupFormat === "profile" || setupFormat === "pullout";
+                        const groupCount = setupFormat === "pullout" ? Math.max(1, setupHighlights.length) : Math.max(1, setupTitles.length, setupContents.length);
+                        const maxContentLines = isSingleType ? 14 - groupCount * 2 : 999;
+                        const currentContentLines = isSingleType ? setupContents.reduce((acc, c) => {
+                          if (!c || typeof c !== 'string') return acc;
+                          return acc + c.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 20)), 0);
+                        }, 0) : 0;
+                        const isNearLimit = currentContentLines >= maxContentLines - 2;
 
-                            return (
-                              <div key={i} className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5 relative group/item">
-                                {setupFormat === "profile" && setupTitles.length > 1 && (
-                                  <button
-                                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full text-white text-[10px] opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-700 shadow-lg z-10"
-                                    onClick={() => {
-                                      setSetupTitles(prev => prev.filter((_, idx) => idx !== i));
-                                      setSetupContents(prev => prev.filter((_, idx) => idx !== i));
-                                    }}
-                                  >✕</button>
-                                )}
-                                <div className="space-y-1.5">
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">小標題 {setupFormat === "profile" ? i + 1 : ""}</label>
-                                  <input
-                                    type="text"
-                                    maxLength={isSingleType ? 15 : undefined}
-                                    placeholder="我是小標題我只能打十三個字"
-                                    className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-xs focus:border-blue-500 outline-none transition-all"
-                                    value={setupTitles[i] ?? (i === 0 ? "我是小標題1" : `新增小標${i + 1}`)}
-                                    onChange={(e) => {
-                                      const newT = [...setupTitles];
-                                      newT[i] = e.target.value;
-                                      setSetupTitles(newT);
-                                    }}
-                                  />
+                        return (
+                          <>
+                            {isSingleType && (
+                              <div className={`text-[10px] font-bold tracking-widest px-3 py-2 rounded-lg border flex items-center justify-between transition-all ${currentContentLines >= maxContentLines ? 'bg-red-500/20 text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : isNearLimit ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50' : 'bg-white/5 text-slate-400 border-white/10'}`}>
+                                <span>全域內文空間監測</span>
+                                <div className="flex items-center gap-2">
+                                  <span>{currentContentLines} / {maxContentLines} 行</span>
+                                  {currentContentLines >= maxContentLines && <span className="bg-red-500 text-white px-1.5 py-0.5 rounded text-[9px] animate-pulse">已達安全上限</span>}
                                 </div>
-                                <div className="space-y-1.5">
-                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">單框內文 {setupFormat === "profile" ? i + 1 : ""}</label>
-                                  <textarea
-                                    placeholder="我是內文一排約能打廿個字"
-                                    className={`w-full h-24 bg-black/30 border ${isSingleType && currentContentLines >= maxContentLines ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-lg p-3 text-xs outline-none transition-all resize-none shadow-inner`}
-                                    value={setupContents[i] ?? (i === 0 ? "我是內文1" : `新增內文${i + 1}`)}
-                                    onChange={(e) => {
-                                      const newVal = e.target.value;
-                                      if (isSingleType) {
-                                        const newContents = [...setupContents];
-                                        newContents[i] = newVal;
-                                        const newLines = newContents.reduce((acc, c) => {
-                                          if (!c || typeof c !== 'string') return acc;
-                                          return acc + c.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 20)), 0);
-                                        }, 0);
-                                        // 攔截：如果超過上限，而且新字串比舊字串長，代表在增加字元
-                                        if (newLines > maxContentLines && newVal.length > (setupContents[i]?.length || 0)) {
-                                          return;
+                              </div>
+                            )}
+                            {(setupFormat === "pullout" ? setupHighlights : (setupTitles.length > 0 ? setupTitles : [undefined as any])).map((itemOrTitle, i) => {
+                              if (setupFormat !== "profile" && setupFormat !== "pullout" && i > 0) return null;
+
+                              return (
+                                <div key={setupFormat === "pullout" ? itemOrTitle.id : i} className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5 relative group/item">
+                                  {((setupFormat === "profile" && setupTitles.length > 1) || setupFormat === "pullout") && (
+                                    <button
+                                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full text-white text-[10px] opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-700 shadow-lg z-10"
+                                      onClick={() => {
+                                        if (setupFormat === "pullout") {
+                                          setSetupHighlights(prev => prev.filter((_, idx) => idx !== i));
                                         }
-                                      }
-                                      const newC = [...setupContents];
-                                      newC[i] = newVal;
-                                      setSetupContents(newC);
-                                    }}
-                                  />
+                                        setSetupTitles(prev => prev.filter((_, idx) => idx !== i));
+                                        setSetupContents(prev => prev.filter((_, idx) => idx !== i));
+                                      }}
+                                    >✕</button>
+                                  )}
+                                  <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{setupFormat === "pullout" ? "螢光標題" : "小標題"} {setupFormat === "profile" || setupFormat === "pullout" ? i + 1 : ""}</label>
+                                    <input
+                                      type="text"
+                                      maxLength={isSingleType ? 15 : undefined}
+                                      placeholder="我是小標題我只能打十三個字"
+                                      className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-xs focus:border-blue-500 outline-none transition-all"
+                                      value={setupTitles[i] ?? (setupFormat === "pullout" ? `新增螢光筆重點${i + 1}` : i === 0 ? "我是小標題1" : `新增小標${i + 1}`)}
+                                      onChange={(e) => {
+                                        const newT = [...setupTitles];
+                                        newT[i] = e.target.value;
+                                        setSetupTitles(newT);
+                                      }}
+                                    />
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{setupFormat === "pullout" ? "螢光內文" : "單框內文"} {setupFormat === "profile" || setupFormat === "pullout" ? i + 1 : ""}</label>
+                                    <textarea
+                                      placeholder="我是內文一排約能打廿個字"
+                                      className={`w-full h-24 bg-black/30 border ${isSingleType && currentContentLines >= maxContentLines ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-lg p-3 text-xs outline-none transition-all resize-none shadow-inner`}
+                                      value={setupContents[i] ?? (setupFormat === "pullout" ? `請輸入圈選重點說明${i + 1}` : i === 0 ? "我是內文1" : `新增內文${i + 1}`)}
+                                      onChange={(e) => {
+                                        const newVal = e.target.value;
+                                        if (isSingleType) {
+                                          const newContents = [...setupContents];
+                                          newContents[i] = newVal;
+                                          const newLines = newContents.reduce((acc, c) => {
+                                            if (!c || typeof c !== 'string') return acc;
+                                            return acc + c.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 20)), 0);
+                                          }, 0);
+                                          // 攔截：如果超過上限，而且新字串比舊字串長，代表在增加字元
+                                          if (newLines > maxContentLines && newVal.length > (setupContents[i]?.length || 0)) {
+                                            return;
+                                          }
+                                        }
+                                        const newC = [...setupContents];
+                                        newC[i] = newVal;
+                                        setSetupContents(newC);
+                                      }}
+                                    />
+                                  </div>
                                 </div>
-                              </div>
+                              );
+                            })}
+                          </>
+                        );
+                      })()}
+
+                      {setupFormat === "profile" && (
+                        <button
+                          onClick={() => {
+                            setSetupTitles(prev => [...prev, undefined as any]);
+                            setSetupContents(prev => [...prev, undefined as any]);
+                          }}
+                          className="w-full py-3 border border-dashed border-white/10 rounded-xl text-white/30 hover:text-blue-400 hover:border-blue-500/30 hover:bg-blue-500/5 transition-all text-xs font-bold flex items-center justify-center gap-2"
+                        >
+                          <span className="text-lg">+</span>
+                          增加一組小標題與內文
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* --------- 文章拉字與傷勢圖 專屬設定 (右欄) --------- */}
+            {(setupFormat === "pullout" || setupFormat === "injury") && (
+              <div className="flex flex-col gap-4">
+                <div className="space-y-4 p-4 bg-blue-500/5 rounded-xl border border-blue-500/20 sticky top-4">
+                  <label className="text-[11px] font-black text-blue-400 uppercase tracking-widest text-center block w-full border-b border-blue-500/20 pb-2 mb-2">
+                    {setupFormat === "pullout" ? "文章拉字專屬設定" : "傷勢圖專屬設定"}
+                  </label>
+
+                  {/* 共同：圈選/點位模式 */}
+                  <div
+                    className="flex items-center justify-between bg-black/30 p-3 rounded-lg border border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
+                    onClick={() => setIsHighlighterMode(!isHighlighterMode)}
+                  >
+                    <span className="text-[10px] text-slate-400 font-bold tracking-wider flex items-center gap-1.5">
+                      {setupFormat === "pullout" ? "🖌️ 圈選模式" : "📍 標註點位模式"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setIsHighlighterMode(!isHighlighterMode); }}
+                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${isHighlighterMode ? "bg-blue-600" : "bg-slate-600"}`}
+                    >
+                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isHighlighterMode ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                    </button>
+                  </div>
+
+                  {setupFormat === "injury" && (
+                    <div className="space-y-3">
+                      <label className="text-[10px] text-slate-400 font-bold block">人物旋轉 (Rotation)</label>
+                      <div className="bg-black/30 p-4 rounded-lg border border-white/5 space-y-4">
+                        <div className="space-y-3">
+                          <input 
+                            type="range" 
+                            min="0" 
+                            max="7" 
+                            step="1"
+                            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-red-600 shadow-inner"
+                            value={setupInjuryRotationIndex}
+                            onChange={(e) => setSetupInjuryRotationIndex(parseInt(e.target.value))}
+                          />
+                          <div className="grid grid-cols-8 text-[8px] text-slate-500 font-bold text-center gap-0">
+                            {["正面", "45°", "右側", "135°", "背面", "225°", "左側", "315°"].map((lbl, idx) => (
+                              <span key={idx} className={setupInjuryRotationIndex === idx ? "text-red-500" : ""}>{lbl}</span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/5 flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] text-white font-bold opacity-80">
+                              {
+                                ["正面 (0°)", "右斜 45°", "右側 (90°)", "右斜背 135°", "背面 (180°)", "左斜背 225°", "左側 (270°)", "左斜 315°"][setupInjuryRotationIndex]
+                              }
+                            </span>
+                            <span className="text-[8px] text-slate-500 font-medium whitespace-nowrap">Fine-tuning supported</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <button
+                              className="bg-white/5 hover:bg-white/10 w-8 h-8 flex items-center justify-center rounded-lg border border-white/10 transition-colors text-xs"
+                              onClick={() => setSetupInjuryRotationIndex(prev => (prev + 7) % 8)}
+                            >◀</button>
+                            <button
+                              className="bg-white/5 hover:bg-white/10 w-8 h-8 flex items-center justify-center rounded-lg border border-white/10 transition-colors text-xs"
+                              onClick={() => setSetupInjuryRotationIndex(prev => (prev + 1) % 8)}
+                            >▶</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {setupFormat === "pullout" && (
+                    <>
+                      <div className="space-y-3">
+                        <label className="text-[10px] text-slate-400 font-bold block">指示線選單</label>
+                        <div className="flex flex-col gap-3 bg-black/30 p-3 rounded-lg border border-white/5">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-slate-500 whitespace-nowrap">粗細</span>
+                            <input
+                              type="range" min="1" max="10"
+                              value={pulloutLineThickness}
+                              onChange={e => setPulloutLineThickness(Number(e.target.value))}
+                              className="flex-1 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                            />
+                            <span className="text-[10px] text-white font-bold w-4 text-center">{pulloutLineThickness}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-slate-500 whitespace-nowrap">樣式</span>
+                            <div className="flex gap-2">
+                              <button
+                                className={`px-3 py-1.5 text-[10px] rounded transition-colors ${pulloutLineStyle === "dashed" ? "bg-blue-600 text-white font-bold shadow-md" : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"}`}
+                                onClick={() => setPulloutLineStyle("dashed")}
+                              >虛線</button>
+                              <button
+                                className={`px-3 py-1.5 text-[10px] rounded transition-colors ${pulloutLineStyle === "solid" ? "bg-blue-600 text-white font-bold shadow-md" : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"}`}
+                                onClick={() => setPulloutLineStyle("solid")}
+                              >實線</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <label className="text-[10px] text-slate-400 font-bold block">螢光筆色彩方案</label>
+                        <div className="flex gap-3 bg-black/30 p-3 rounded-lg border border-white/5">
+                          {(["yellow", "red", "green"] as const).map(c => {
+                            const isActive = highlightColor === c;
+                            const colors = { yellow: "bg-yellow-400", red: "bg-red-400", green: "bg-green-400" };
+                            return (
+                              <button
+                                key={c}
+                                className={`w-8 h-8 rounded-full transition-all border-2 flex shrink-0 items-center justify-center ${isActive ? "border-white scale-110 shadow-[0_0_10px_rgba(255,255,255,0.3)]" : "border-transparent opacity-50 hover:opacity-100 hover:scale-105"}`}
+                                onClick={() => {
+                                  setHighlightColor(c);
+                                  setSetupHighlights(prev => prev.map(h => ({ ...h, color: c })));
+
+                                  const hexMap = { yellow: "#facc15", red: "#f87171", green: "#4ade80" };
+                                  setAssets(prev => prev.map(a => a.type === 'highlight' ? { ...a, strokeColor: hexMap[c], customBgColor: hexMap[c] } : a));
+                                }}
+                              >
+                                <div className={`w-full h-full rounded-full ${colors[c]}`}></div>
+                              </button>
                             );
                           })}
-                        </>
-                      );
-                    })()}
-
-                    {setupFormat === "profile" && (
-                      <button
-                        onClick={() => {
-                          setSetupTitles(prev => [...prev, undefined as any]);
-                          setSetupContents(prev => [...prev, undefined as any]);
-                        }}
-                        className="w-full py-3 border border-dashed border-white/10 rounded-xl text-white/30 hover:text-blue-400 hover:border-blue-500/30 hover:bg-blue-500/5 transition-all text-xs font-bold flex items-center justify-center gap-2"
-                      >
-                        <span className="text-lg">+</span>
-                        增加一組小標題與內文
-                      </button>
-                    )}
-                  </div>
-                )}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -3907,10 +4851,13 @@ const App: React.FC = () => {
                     }}
                   >
                     <div
-                      className={`relative w-full h-full z-10 transition-transform duration-300 ${asset.type === "image" ? "pointer-events-auto cursor-move touch-none" : ""}`}
+                      className={`relative w-full h-full z-10 transition-transform duration-300 ${asset.type === "image" || asset.type === "highlight" ? "pointer-events-auto cursor-move touch-none" : ""}`}
                       onMouseDown={(e) => {
                         if (asset.type === "image" && asset.setupImageIndex !== undefined) {
                           handleSetupImageInnerMouseDown(e, asset.setupImageIndex, asset);
+                        }
+                        if (asset.type === "highlight") {
+                          handleSetupHighlightMouseDown(e, asset.id);
                         }
                       }}
                       onWheel={(e) => {
@@ -3921,6 +4868,9 @@ const App: React.FC = () => {
                       onTouchStart={(e) => {
                         if (asset.type === "image" && asset.setupImageIndex !== undefined) {
                           handleSetupImageInnerTouchStart(e, asset.setupImageIndex, asset, setupPreviewScale);
+                        }
+                        if (asset.type === "highlight") {
+                          handleSetupHighlightTouchStart(e, asset.id);
                         }
                       }}
                       onContextMenu={(e) => {
@@ -3936,11 +4886,67 @@ const App: React.FC = () => {
                         hasGlobalBg={!!bgImageUrl && canvasBgVisible}
                         isExporting={isExporting}
                       />
+
+                      {asset.type === "highlight" && selectedSetupHighlightId === asset.id && isHighlighterMode && (
+                        <div className="absolute inset-0 ring-2 ring-blue-500 z-50 pointer-events-none">
+                          <button className="absolute -top-6 right-0 bg-red-500 text-white rounded p-1 pointer-events-auto cursor-pointer" onClick={(e) => {
+                            e.stopPropagation();
+                            const targetIndex = setupHighlights.findIndex(h => h.id === asset.id);
+                            if (targetIndex !== -1) {
+                              setSetupHighlights(prev => prev.filter(h => h.id !== asset.id));
+                              setSetupTitles(prev => prev.filter((_, idx) => idx !== targetIndex));
+                              setSetupContents(prev => prev.filter((_, idx) => idx !== targetIndex));
+                            }
+                            setSelectedSetupHighlightId(null);
+                          }}>
+                            🗑️
+                          </button>
+                          <div className="absolute top-0 right-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-ne-resize transform translate-x-1/2 -translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'ne', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'ne', asset.id)} />
+                          <div className="absolute bottom-0 right-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-se-resize transform translate-x-1/2 translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'se', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'se', asset.id)} />
+                          <div className="absolute bottom-0 left-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-sw-resize transform -translate-x-1/2 translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'sw', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'sw', asset.id)} />
+                          <div className="absolute top-0 left-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-nw-resize transform -translate-x-1/2 -translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'nw', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'nw', asset.id)} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
 
               {safetyVisible && <SafetyGuides opacity={0.5} />}
+
+              {/* 螢光筆關連指示線層 - Setup Mode */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1000]" style={{ overflow: 'visible' }}>
+                {isHighlighterMode && setupFormat !== "injury" && previewAssets.filter(a => a.type === 'highlight').map(h => (
+                  <circle key={'dot-' + h.id} cx={h.x + h.baseW * (h.scaleX || 1)} cy={h.y + (h.baseH * (h.scaleY || 1)) / 2} r="4" fill={h.strokeColor || "#ca8a04"} data-uid={h.id} />
+                ))}
+                {setupFormat !== "injury" && getIndicatorPaths(previewAssets, setupFormat === "pullout").map((p: any) => {
+                  const hl = previewAssets.find(a => a.id === p.id);
+                  const cColor = hl?.strokeColor || "#ca8a04";
+                  return (
+                    <path
+                      key={p.id}
+                      d={p.path}
+                      fill="none"
+                      stroke={cColor}
+                      strokeWidth={pulloutLineThickness}
+                      strokeDasharray={pulloutLineStyle === "dashed" ? "4 4" : "none"}
+                      strokeLinejoin="miter"
+                      data-uid={p.id}
+                    />
+                  );
+                })}
+              </svg>
+
+              {marquee && isHighlighterMode && setupFormat === "pullout" && (
+                <div
+                  className="absolute marquee-drag border border-blue-400 bg-blue-500/10 z-[8500]"
+                  style={{
+                    left: marquee.x,
+                    top: marquee.y,
+                    width: marquee.width,
+                    height: marquee.height,
+                  }}
+                />
+              )}
             </div>
 
             {/* 手機版/全局重置圖片位置按鈕 */}
@@ -3962,6 +4968,31 @@ const App: React.FC = () => {
       </div>
     );
   };
+
+  const getIndicatorPaths = useCallback((sourceAssets: Asset[]) => {
+    const highlights = sourceAssets.filter(a => a.type === "highlight" && a.linkedAssetIds?.[0] && a.visible);
+    if (highlights.length === 0) return [];
+
+    const sortedHighlights = [...highlights].sort((a, b) => a.y - b.y);
+
+    return sortedHighlights.map((h, index) => {
+      const target = sourceAssets.find(a => a.id === h.linkedAssetIds![0]);
+      if (!target || !target.visible) return null;
+
+      const startX = h.x + h.baseW * (h.scaleX || 1);
+      const startY = h.y + (h.baseH * (h.scaleY || 1)) / 2;
+      const endX = target.x;
+      const targetB = calculateAssetVisualBounds(target);
+      const endY = target.y + (targetB.baseH * target.scaleY) / 2;
+
+      const midX = startX + 20 + index * 15;
+
+      return {
+        id: h.id,
+        path: `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`
+      };
+    }).filter(Boolean);
+  }, []);
 
   return (
     <>
@@ -4118,6 +5149,17 @@ const App: React.FC = () => {
                   icon="🔍"
                   onClick={() => applyMultifunctionLayout("pullout")}
                   label="文章拉字"
+                />
+              </div>
+
+              <div className="w-8 h-px bg-white/10" />
+
+              <div className="flex flex-col gap-2 items-center">
+                <ToolIcon
+                  icon="🖌️"
+                  active={isHighlighterMode}
+                  onClick={() => setIsHighlighterMode(!isHighlighterMode)}
+                  label="圈選模式 (Highlighter)"
                 />
               </div>
 
@@ -4291,6 +5333,30 @@ const App: React.FC = () => {
                       </div>
                     ),
                 )}
+
+                {/* 螢光筆關連指示線層 (SVG) */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1000]" style={{ overflow: 'visible' }}>
+                  {!isExporting && isHighlighterMode && setupFormat !== "injury" && assets.filter(a => a.type === 'highlight').map(h => (
+                    <circle key={'dot-' + h.id} cx={h.x + h.baseW * h.scaleX} cy={h.y + (h.baseH * h.scaleY) / 2} r="4" fill="#facc15" data-uid={h.id} />
+                  ))}
+                  {setupFormat !== "injury" && getIndicatorPaths(assets).map((p: any) => {
+                    const hl = assets.find(a => a.id === p.id);
+                    const cColor = hl?.strokeColor || "#facc15";
+                    return (
+                      <path
+                        key={p.id}
+                        d={p.path}
+                        fill="none"
+                        stroke={cColor}
+                        strokeWidth={pulloutLineThickness}
+                        strokeDasharray={pulloutLineStyle === "dashed" ? "4 4" : "none"}
+                        strokeLinejoin="miter"
+                        data-uid={p.id}
+                      />
+                    );
+                  })}
+                </svg>
+
                 {safetyVisible && !isExporting && (
                   <SafetyGuides opacity={safetyOpacity} />
                 )}

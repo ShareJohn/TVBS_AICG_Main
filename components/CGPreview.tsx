@@ -3,7 +3,7 @@ import { CGTheme, THEMES } from '../types';
 interface CGPreviewProps {
   data: {
     id: string;
-    type: 'image' | 'title' | 'content' | 'block' | 'stamp';
+    type: 'image' | 'title' | 'content' | 'block' | 'stamp' | 'highlight';
     src?: string;
     text?: string;
     items?: string[];
@@ -80,19 +80,45 @@ const getExplosionPath = (width: number, height: number, spikes = 20) => {
   return points.join(' ');
 };
 
+const pingStyle = `
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.animate-ping {
+  animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+`;
+
 
 export const CGPreview = memo(({
   data,
   mode,
   isSelected,
   hasGlobalBg,
-  isExporting
-}: CGPreviewProps) => {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const textRef = React.useRef<HTMLSpanElement>(null);
-  const [squeezeScale, setSqueezeScale] = React.useState(1);
+    isExporting
+  }: CGPreviewProps) => {
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const textRef = React.useRef<HTMLSpanElement>(null);
+    const [squeezeScale, setSqueezeScale] = React.useState(1);
 
-  const isProfileLayout = data.layoutType === 'profile';
+    // Inject animation styles
+    React.useEffect(() => {
+      if (typeof document !== 'undefined') {
+        const id = 'cg-preview-animations';
+        if (!document.getElementById(id)) {
+          const style = document.createElement('style');
+          style.id = id;
+          style.textContent = pingStyle;
+          document.head.appendChild(style);
+        }
+      }
+    }, []);
+
+    const isProfileLayout = data.layoutType === 'profile';
+    const isInjuryLayout = data.layoutType === 'injury';
   const hasText = mode === 'title' ? !!(data.text && data.text.trim()) : !!(data.items && data.items.some(i => i.trim()));
   const showBackground = hasText && (
     (isProfileLayout && !hasGlobalBg && (data.id.includes('title-r') || data.id.includes('content-r'))) 
@@ -226,6 +252,27 @@ export const CGPreview = memo(({
       );
     }
 
+    if (data.type === 'highlight') {
+      const isPin = isInjuryLayout && data.borderRadius === 20;
+      return (
+        <div className="relative w-full h-full group/highlight" style={{ width: `${data.width}px` }}>
+          <div className={`absolute inset-0 transition-all duration-300 group-hover/highlight:brightness-110 ${isPin ? 'shadow-[0_0_15px_rgba(239,68,68,0.8)]' : ''}`}
+            style={{ 
+              opacity: bgAlpha, 
+              borderRadius: `${data.borderRadius}px`, 
+              backgroundColor: data.customBgColor,
+              border: `${data.strokeWidth || 0}px solid ${data.strokeColor || 'transparent'}`,
+              zIndex: 0 
+            }}
+          >
+            {isPin && (
+              <div className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-75" />
+            )}
+          </div>
+        </div>
+      );
+    }
+
     if (mode === 'title') {
       return (
         <div
@@ -237,29 +284,54 @@ export const CGPreview = memo(({
           }}
         >
           {showBackground && (
-            <div className={`absolute inset-0 ${data.customBgColor ? '' : `bg-gradient-to-r ${theme.primary}`} ${data.hideBorderLeft ? '' : `border-l-[16px] ${theme.accent}`} transition-all duration-300 group-hover/title:brightness-110`}
-              style={{ opacity: bgAlpha, borderRadius: `${data.borderRadius}px`, backgroundColor: data.customBgColor, zIndex: 0 }}
+            <div className={`absolute inset-0 ${data.customBgColor && !isInjuryLayout ? '' : `bg-gradient-to-r ${theme.primary}`} ${isInjuryLayout ? 'border-l-4 border-red-500 bg-white/10 backdrop-blur-md shadow-xl' : (data.hideBorderLeft ? '' : `border-l-[16px] ${theme.accent}`)} transition-all duration-300 group-hover/title:brightness-110`}
+              style={{ opacity: isInjuryLayout ? 1 : bgAlpha, borderRadius: isInjuryLayout ? '0 12px 12px 0' : `${data.borderRadius}px`, backgroundColor: (!isInjuryLayout && data.customBgColor) ? data.customBgColor : (isInjuryLayout ? 'rgba(255,255,255,0.05)' : undefined), zIndex: 0 }}
             />
           )}
-          <div className={`relative z-10 flex ${data.autoWrap || data.isVertical ? 'items-start' : 'items-center'} h-full w-full`} style={{ 
-            paddingLeft: showBackground && !data.hideBorderLeft ? '48px' : '0px', 
-            paddingRight: showBackground && (!data.textAlign || data.textAlign === 'left') ? '48px' : '0px',
-            justifyContent: data.textAlign === 'center' ? 'center' : data.textAlign === 'right' ? 'flex-end' : 'flex-start'
-          }}>
-            {data.text && (
+
+          {isInjuryLayout && (data as any).name?.includes('傷勢標題') ? (
+            <div className="relative z-10 flex flex-col justify-center h-full w-full px-6 py-3">
+              {/* Fake straight connector line extending to the left */}
+              <div className="absolute top-1/2 -translate-y-1/2 right-full w-48 h-[1px] bg-gradient-to-r from-red-500/20 to-red-500 flex items-center justify-start pointer-events-none">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,1)] transform -translate-x-[3px]" />
+              </div>
+
+              <div className="text-[14px] font-bold text-red-500 uppercase tracking-widest mb-1">
+                POINT {(data as any).name.match(/\d+/)?.[0]?.padStart(2, '0') || '01'}
+              </div>
               <span 
                 ref={textRef}
                 style={{
                   ...commonTextStyles,
-                  transform: squeezeScale < 1 ? (data.isVertical ? `scaleY(${squeezeScale})` : `scaleX(${squeezeScale})`) : 'none',
-                  transformOrigin: data.isVertical ? 'top center' : (data.textAlign === 'center' ? 'center center' : (data.textAlign === 'right' ? 'right center' : 'left center')),
-                }} 
+                  width: '100%',
+                  whiteSpace: data.autoWrap ? 'pre-wrap' : 'nowrap',
+                }}
                 className={`tracking-tighter max-w-none ${data.isVertical ? '' : 'whitespace-nowrap'} ${textHoverClass}`}
               >
-                {data.isVertical ? [...data.text].join('\n') : data.text}
+                {data.text}
               </span>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className={`relative z-10 flex ${data.autoWrap || data.isVertical ? 'items-start' : 'items-center'} h-full w-full`} style={{ 
+              paddingLeft: showBackground && !data.hideBorderLeft ? '48px' : '0px', 
+              paddingRight: showBackground && (!data.textAlign || data.textAlign === 'left') ? '48px' : '0px',
+              justifyContent: data.textAlign === 'center' ? 'center' : data.textAlign === 'right' ? 'flex-end' : 'flex-start'
+            }}>
+              {data.text && (
+                <span 
+                  ref={textRef}
+                  style={{
+                    ...commonTextStyles,
+                    transform: squeezeScale < 1 ? (data.isVertical ? `scaleY(${squeezeScale})` : `scaleX(${squeezeScale})`) : 'none',
+                    transformOrigin: data.isVertical ? 'top center' : (data.textAlign === 'center' ? 'center center' : (data.textAlign === 'right' ? 'right center' : 'left center')),
+                  }} 
+                  className={`tracking-tighter max-w-none ${data.isVertical ? '' : 'whitespace-nowrap'} ${textHoverClass}`}
+                >
+                  {data.isVertical ? [...data.text].join('\n') : data.text}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       );
     }
