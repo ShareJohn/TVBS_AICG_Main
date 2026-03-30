@@ -4677,6 +4677,24 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
+            {setupFormat === "injury" && (
+              <div className="pt-2">
+                <div className="w-full flex items-center justify-between px-3 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    啟動內建人物模型 (Model)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSetupInjuryRotationIndex(setupInjuryRotationIndex >= 0 ? -1 : 0)}
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${setupInjuryRotationIndex >= 0 ? "bg-red-600" : "bg-slate-600"}`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${setupInjuryRotationIndex >= 0 ? "translate-x-3.5" : "translate-x-0.5"}`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* --------- 3 文字內容輸入 --------- */}
