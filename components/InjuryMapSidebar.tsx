@@ -40,30 +40,47 @@ export const InjuryMapSidebar: React.FC<InjuryMapSidebarProps> = ({
         </div>
 
         <div className="space-y-4 pt-4 border-t border-white/10">
-          <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-            人物旋轉 (Rotation)
-          </label>
-          <div className="space-y-2">
-            <input
-              type="range"
-              min="0"
-              max="7"
-              step="1"
-              className="w-full h-1.5 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-red-600"
-              value={rotationIndex}
-              onChange={(e) => setRotationIndex(parseInt(e.target.value))}
-            />
-            <div className="grid grid-cols-8 text-[9px] text-slate-400 font-bold text-center pt-1">
-              <span>正面</span>
-              <span>45°</span>
-              <span>右側</span>
-              <span>135°</span>
-              <span>背面</span>
-              <span>225°</span>
-              <span>左側</span>
-              <span>315°</span>
-            </div>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              啟動內建人物模型
+            </label>
+            <button
+              onClick={() => setRotationIndex(rotationIndex >= 0 ? -1 : 0)}
+              className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors ${rotationIndex >= 0 ? "bg-red-600" : "bg-slate-700"}`}
+            >
+              <span
+                className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${rotationIndex >= 0 ? "translate-x-4" : "translate-x-1"}`}
+              />
+            </button>
           </div>
+          {rotationIndex >= 0 && (
+            <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">
+                人物旋轉 (Rotation)
+              </label>
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="7"
+                  step="1"
+                  className="w-full h-1.5 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-red-600"
+                  value={rotationIndex}
+                  onChange={(e) => setRotationIndex(parseInt(e.target.value))}
+                />
+                <div className="grid grid-cols-8 text-[9px] text-slate-400 font-bold text-center pt-1">
+                  <span>正面</span>
+                  <span>45°</span>
+                  <span>右側</span>
+                  <span>135°</span>
+                  <span>背面</span>
+                  <span>225°</span>
+                  <span>左側</span>
+                  <span>315°</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="space-y-4 pt-4 border-t border-white/10">
