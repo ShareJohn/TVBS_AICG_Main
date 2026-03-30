@@ -2195,7 +2195,7 @@ const App: React.FC = () => {
       const targetW = natW * scale;
       const baseX = 480 - targetW / 2; // Fixed at 218
 
-      imageAssets = [{
+      imageAssets = setupInjuryRotationIndex >= 0 ? [{
         id: "img-injury-main",
         type: "image",
         src: INJURY_BASE_IMAGES[setupInjuryRotationIndex],
@@ -2214,7 +2214,7 @@ const App: React.FC = () => {
           y: 0,
           scale: scale
         },
-      }];
+      }] : [];
 
       textAssets = [];
 
