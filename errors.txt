@@ -1,0 +1,2 @@
+﻿App.tsx(3789,91): error TS2554: Expected 3 arguments, but got 4.
+App.tsx(3794,87): error TS2554: Expected 3 arguments, but got 4.

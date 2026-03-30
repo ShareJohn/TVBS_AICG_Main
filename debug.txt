@@ -1,0 +1,9 @@
+2651:     // update setup image transform (this means we need to store it in state or wait, but currently setup preview uses asset.imageTransform generated dynamically. Let's just update the asset if we can or ignore for now if it's stateless setup. Wait, setup images are stateless in preview until saved. We might need to store Transforms in setupImages state. Let's look at how handleSetupImageInnerMouseDown works.
+2773:   const handleSetupImageInnerMouseDown = (e: React.MouseEvent, index: number, asset: Asset, currentSetupPreviewScale: number) => {
+2805:   const handleSetupImageInnerWheel = (e: React.WheelEvent<HTMLDivElement>, index: number, asset: Asset, currentSetupPreviewScale: number) => {
+2830:   const handleSetupImageInnerTouchStart = (e: React.TouchEvent, index: number, asset: Asset, currentSetupPreviewScale: number) => {
+3147:     const handleSetupImageInnerMouseDown = (e: React.MouseEvent, index: number, asset: Asset) => {
+3182:     const handleSetupImageInnerWheel = (e: React.WheelEvent<HTMLDivElement>, index: number, asset: Asset) => {
+3789:                           handleSetupImageInnerMouseDown(e, asset.setupImageIndex, asset, setupPreviewScale);
+3794:                           handleSetupImageInnerWheel(e, asset.setupImageIndex, asset, setupPreviewScale);
+3799:                           handleSetupImageInnerTouchStart(e, asset.setupImageIndex, asset, setupPreviewScale);

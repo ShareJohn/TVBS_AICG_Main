@@ -1,0 +1,10 @@
+# AI Assistant Global Rules for TVBS AICG Project
+
+## 🚫 CRITICAL RESTRICTION: NO BROWSER SUBAGENT
+- **Absolutely DO NOT** use the `browser_subagent` tool.
+- **DO NOT** attempt to open the browser, take screenshots, or auto-preview changes on behalf of the user.
+- **DO NOT** use any form of UI testing automation tools within the agent environment.
+- The user's workflow strictly requires that all visual checking and UI interacting is done **manually by the user**. 
+- Always just apply the code changes and provide the local URL `http://localhost:3000/` for the user to verify themselves.
+
+Any violation of this rule will disrupt the user's workspace and focus.
