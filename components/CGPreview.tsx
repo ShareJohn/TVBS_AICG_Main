@@ -5,6 +5,7 @@ interface CGPreviewProps {
     id: string;
     type: 'image' | 'title' | 'content' | 'block' | 'stamp' | 'highlight';
     src?: string;
+    name?: string;
     text?: string;
     items?: string[];
     theme: CGTheme;
@@ -119,9 +120,10 @@ export const CGPreview = memo(({
 
     const isProfileLayout = data.layoutType === 'profile';
     const isInjuryLayout = data.layoutType === 'injury';
+    const isInjuryGlassMode = isInjuryLayout && hasGlobalBg;
   const hasText = mode === 'title' ? !!(data.text && data.text.trim()) : !!(data.items && data.items.some(i => i.trim()));
   const showBackground = hasText && (
-    (isProfileLayout && !hasGlobalBg && (data.id.includes('title-r') || data.id.includes('content-r'))) 
+    (!hasGlobalBg && (data.id.includes('title-r') || data.id.includes('content-r') || data.id.includes('title-sh') || data.id.includes('content-sh') || data.layoutType === 'injury')) 
     ? true 
     : data.showBackground
   );
@@ -162,11 +164,18 @@ export const CGPreview = memo(({
   const isMainTitleWithBg = hasGlobalBg && data.id.includes('title-main') && hasText;
 
   let showStroke = data.showStroke;
-  let strokeWidth = data.strokeWidth;
+  let strokeWidth = data.strokeWidth || 0;
+
+  const isTargetLayoutWithBg = hasGlobalBg && hasText && 
+    (isProfileLayout || isInjuryLayout || data.layoutType === 'pullout') &&
+    !(isMainTitleNoBg || isMainTitleWithBg);
 
   if (isMainTitleNoBg || isMainTitleWithBg) {
     showStroke = true;
     strokeWidth = isMainTitleNoBg ? 8 : 4; 
+  } else if (isTargetLayoutWithBg) {
+    showStroke = true;
+    strokeWidth = 3;
   }
 
   // 決定文字顏色與描邊顏色
@@ -179,6 +188,12 @@ export const CGPreview = memo(({
   } else if (isMainTitleWithBg) {
     textColor = data.textColor || theme.solid;
     strokeColor = data.strokeColor || 'white';
+  } else if (isTargetLayoutWithBg) {
+    strokeColor = 'white';
+    // 確保留白描邊能有效襯托內文顏色，對於沒有指定的人會預設使用深色 (theme.solid 或 black)
+    if (!data.textColor && (isTitle || mode === 'content')) {
+      textColor = data.textColor || theme.solid;
+    }
   }
 
   // 生成立體描邊效果
@@ -232,6 +247,7 @@ export const CGPreview = memo(({
                     : 'none'
                 }}
               />
+
             </>
           ) : (
             <div className="w-full h-full bg-white/5 flex items-center justify-center text-[10px] text-white/20 uppercase font-black">
@@ -253,10 +269,32 @@ export const CGPreview = memo(({
     }
 
     if (data.type === 'highlight') {
-      const isPin = isInjuryLayout && data.borderRadius === 20;
+      const isPin = isInjuryLayout && data.borderRadius >= 10;
+      
+      if (isPin) {
+        // Extract point index from name "📍部位標記 1", fallback to nothing if parsing fails
+        const pMatch = data.name.match(/\d+/);
+        const pNum = pMatch ? pMatch[0] : "";
+        
+        return (
+          <div className="relative w-full h-full group/highlight" style={{ width: `${data.width}px` }}>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="w-6 h-6 bg-red-500 rounded-full border-[3px] border-white shadow-[0_0_15px_rgba(239,68,68,0.8)] z-20 relative">
+                <div className="absolute inset-0 animate-ping bg-red-400 rounded-full opacity-75"></div>
+                {!isExporting && (
+                  <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm whitespace-nowrap">
+                    P{pNum}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="relative w-full h-full group/highlight" style={{ width: `${data.width}px` }}>
-          <div className={`absolute inset-0 transition-all duration-300 group-hover/highlight:brightness-110 ${isPin ? 'shadow-[0_0_15px_rgba(239,68,68,0.8)]' : ''}`}
+          <div className={`absolute inset-0 transition-all duration-300 group-hover/highlight:brightness-110`}
             style={{ 
               opacity: bgAlpha, 
               borderRadius: `${data.borderRadius}px`, 
@@ -265,9 +303,6 @@ export const CGPreview = memo(({
               zIndex: 0 
             }}
           >
-            {isPin && (
-              <div className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-75" />
-            )}
           </div>
         </div>
       );
@@ -284,12 +319,12 @@ export const CGPreview = memo(({
           }}
         >
           {showBackground && (
-            <div className={`absolute inset-0 ${data.customBgColor && !isInjuryLayout ? '' : `bg-gradient-to-r ${theme.primary}`} ${isInjuryLayout ? 'border-l-4 border-red-500 bg-white/10 backdrop-blur-md shadow-xl' : (data.hideBorderLeft ? '' : `border-l-[16px] ${theme.accent}`)} transition-all duration-300 group-hover/title:brightness-110`}
-              style={{ opacity: isInjuryLayout ? 1 : bgAlpha, borderRadius: isInjuryLayout ? '0 12px 12px 0' : `${data.borderRadius}px`, backgroundColor: (!isInjuryLayout && data.customBgColor) ? data.customBgColor : (isInjuryLayout ? 'rgba(255,255,255,0.05)' : undefined), zIndex: 0 }}
+            <div className={`absolute inset-0 ${data.customBgColor && !isInjuryGlassMode ? '' : `bg-gradient-to-r ${theme.primary}`} ${isInjuryGlassMode ? 'border-l-4 border-red-500 bg-white/10 backdrop-blur-md shadow-xl' : (data.hideBorderLeft ? '' : `border-l-[16px] ${theme.accent}`)} transition-all duration-300 group-hover/title:brightness-110`}
+              style={{ opacity: isInjuryGlassMode ? 1 : bgAlpha, borderRadius: isInjuryGlassMode ? '0 12px 12px 0' : `${data.borderRadius}px`, backgroundColor: (!isInjuryGlassMode && data.customBgColor) ? data.customBgColor : (isInjuryGlassMode ? 'rgba(255,255,255,0.05)' : undefined), zIndex: 0 }}
             />
           )}
 
-          {isInjuryLayout && (data as any).name?.includes('傷勢標題') ? (
+          {isInjuryGlassMode && (data as any).name?.includes('傷勢標題') ? (
             <div className="relative z-10 flex flex-col justify-center h-full w-full px-6 py-3">
               {/* Fake straight connector line extending to the left */}
               <div className="absolute top-1/2 -translate-y-1/2 right-full w-48 h-[1px] bg-gradient-to-r from-red-500/20 to-red-500 flex items-center justify-start pointer-events-none">

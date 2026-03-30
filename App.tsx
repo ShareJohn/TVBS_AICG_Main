@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import { FONT_OPTIONS, CGTheme, THEMES } from "./types";
 import { CGPreview } from "./components/CGPreview";
+import { InjuryMapLayout } from "./components/InjuryMapLayout";
+import { InjuryMapSidebar } from "./components/InjuryMapSidebar";
 // import { generateHeadlines } from './services/geminiService';
 import { CropModal } from "./components/CropModal";
 import html2canvas from "html2canvas";
@@ -193,9 +195,17 @@ const App: React.FC = () => {
   const [setupHighlights, setSetupHighlights] = useState<any[]>([]);
   const [selectedSetupHighlightId, setSelectedSetupHighlightId] = useState<string | null>(null);
   const [highlightColor, setHighlightColor] = useState<"yellow" | "red" | "green">("yellow");
-  const [pulloutLineThickness, setPulloutLineThickness] = useState<number>(2);
-  const [pulloutLineStyle, setPulloutLineStyle] = useState<"solid" | "dashed">("dashed");
+  const [pulloutLineThickness, setPulloutLineThickness] = useState<number>(3);
+  const [pulloutLineStyle, setPulloutLineStyle] = useState<"solid" | "dashed">("solid");
   const [setupInjuryRotationIndex, setSetupInjuryRotationIndex] = useState(0);
+  const [setupInjuryTransform, setSetupInjuryTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [setupInjuryTitle, setSetupInjuryTitle] = useState("事故傷勢報告 (Injury Report)");
+  const [setupInjuryPoints, setSetupInjuryPoints] = useState([
+    { id: '1', label: "頭部輕微擦傷", y: 15, x: 50 },
+    { id: '2', label: "左肩挫傷", y: 30, x: 40 },
+    { id: '3', label: "右臂骨折", y: 45, x: 60 },
+    { id: '4', label: "膝蓋紅腫", y: 75, x: 50 },
+  ]);
 
   const INJURY_BASE_IMAGES = [
     "https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/Source-image/%E4%BA%BA%E7%89%A9%E5%82%B7%E5%8B%A2%E5%9C%9600.png",
@@ -215,6 +225,7 @@ const App: React.FC = () => {
   const [isBgPanelOpen, setIsBgPanelOpen] = useState(false);
   const [isSetupBgPanelOpen, setIsSetupBgPanelOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [injuryOverlapWarnings, setInjuryOverlapWarnings] = useState<{ p1: number, p2: number }[]>([]);
 
 
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -236,6 +247,113 @@ const App: React.FC = () => {
     //   y: window.innerHeight - 350
     // });
   }, []);
+
+  // 預載人物圖片，避免拖拉滑桿時出現圖片載入的空白與卡頓 (Preload images for Injury Map)
+  useEffect(() => {
+    if (setupFormat === "injury") {
+      INJURY_BASE_IMAGES.forEach((url) => {
+        const img = new Image();
+        img.src = url;
+      });
+    }
+  }, [setupFormat]);
+
+  // 偵測傷勢圖文字交疊
+  useEffect(() => {
+    if (appStage !== "preview" || setupFormat !== "injury" || isExporting) {
+      setInjuryOverlapWarnings([]);
+      return;
+    }
+
+    const checkOverlap = () => {
+      const sortedHighlights = [...setupHighlights].sort((a, b) => a.y - b.y);
+      if (sortedHighlights.length < 2) {
+        setInjuryOverlapWarnings([]);
+        return;
+      }
+
+      const overlaps: { p1: number, p2: number }[] = [];
+      const getBounds = (el1?: HTMLElement | null, el2?: HTMLElement | null) => {
+        let bottom = -Infinity;
+        let top = Infinity;
+        if (el1) {
+          const r = el1.getBoundingClientRect();
+          bottom = Math.max(bottom, r.bottom);
+          top = Math.min(top, r.top);
+        }
+        if (el2) {
+          const r = el2.getBoundingClientRect();
+          bottom = Math.max(bottom, r.bottom);
+          top = Math.min(top, r.top);
+        }
+        return { top, bottom };
+      };
+
+      for (let i = 0; i < sortedHighlights.length; i++) {
+        for (let j = i + 1; j < sortedHighlights.length; j++) {
+          const id1 = sortedHighlights[i].id;
+          const id2 = sortedHighlights[j].id;
+
+          const t1 = document.querySelector(`[data-asset-id="title-sh-${id1}"]`) as HTMLElement;
+          const c1 = document.querySelector(`[data-asset-id="content-sh-${id1}"]`) as HTMLElement;
+          const t2 = document.querySelector(`[data-asset-id="title-sh-${id2}"]`) as HTMLElement;
+          const c2 = document.querySelector(`[data-asset-id="content-sh-${id2}"]`) as HTMLElement;
+
+          const b1 = getBounds(t1, c1);
+          const b2 = getBounds(t2, c2);
+
+          if (b1.bottom !== -Infinity && b2.top !== Infinity) {
+            if (b1.bottom > b2.top && b1.top < b2.bottom) {
+              overlaps.push({ p1: i + 1, p2: j + 1 });
+            }
+          }
+        }
+      }
+      setInjuryOverlapWarnings(overlaps);
+    };
+
+    const timer = setTimeout(checkOverlap, 500); // 等待渲染
+    return () => clearTimeout(timer);
+  }, [assets, setupFormat, setupHighlights, isExporting, appStage, panOffset, previewScale]);
+
+  const handleAutoFixInjuryOverlap = () => {
+    let currentY = 170; // 第一組預設起始高度
+    setSetupHighlights(prev => {
+      let newHl = [...prev].map(h => ({ ...h }));
+      const sortedIndexes = newHl.map((_, i) => i).sort((a, b) => newHl[a].y - newHl[b].y);
+
+      sortedIndexes.forEach((idx) => {
+        const hl = newHl[idx];
+
+        let defaultY;
+        if (newHl.length === 1) defaultY = 250;
+        else {
+          const maxInterval = (800 - 120 - 170) / (newHl.length - 1);
+          const interval = Math.min(250, maxInterval);
+          defaultY = 170 + sortedIndexes.indexOf(idx) * interval;
+        }
+
+        if (currentY < defaultY) currentY = defaultY;
+
+        newHl[idx].yOffset = currentY - defaultY;
+
+        const tText = setupTitles[idx] !== undefined ? setupTitles[idx] : `部位 ${idx + 1}`;
+        const cText = setupContents[idx] !== undefined ? setupContents[idx] : `傷勢說明 ${idx + 1}`;
+
+        let tHeight = 0;
+        if (tText.trim().length > 0) tHeight = 90;
+
+        let cHeight = 0;
+        if (cText.trim().length > 0) {
+          const rows = cText.split('\n').reduce((sum, sub) => sum + Math.max(1, Math.ceil((sub.length || 1) / 18)), 0);
+          cHeight = rows * 60;
+        }
+
+        currentY += tHeight + cHeight + 40;
+      });
+      return newHl;
+    });
+  };
 
   const recalculateProfileLayoutHeights = (currentAssets: Asset[]): Asset[] => {
     const profileAssets = currentAssets.filter(a => a.layoutType === "profile" || a.layoutType === "injury");
@@ -631,6 +749,74 @@ const App: React.FC = () => {
     setSelectedAssetIds([]);
   };
 
+  const handleSetupTextYOffsetMouseDown = (e: React.MouseEvent, asset: Asset, currentScale: number) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (activeTouchInteraction) return;
+
+    const match = asset.id.match(/(?:title|content)-sh-(.+)/);
+    if (!match) return;
+    const hId = match[1];
+
+    const targetHlIndex = setupHighlights.findIndex((h) => h.id === hId);
+    if (targetHlIndex === -1) return;
+
+    const startY = e.clientY;
+    const initialYOffset = setupHighlights[targetHlIndex].yOffset || 0;
+
+    const onMove = (me: MouseEvent) => {
+      const dy = (me.clientY - startY) / currentScale;
+      setSetupHighlights((prev) =>
+        prev.map((h, i) =>
+          i === targetHlIndex ? { ...h, yOffset: initialYOffset + dy } : h
+        )
+      );
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const handleSetupTextYOffsetTouchStart = (e: React.TouchEvent, asset: Asset, currentScale: number) => {
+    e.stopPropagation();
+    if (activeTouchInteraction) return;
+
+    const match = asset.id.match(/(?:title|content)-sh-(.+)/);
+    if (!match) return;
+    const hId = match[1];
+
+    const targetHlIndex = setupHighlights.findIndex((h) => h.id === hId);
+    if (targetHlIndex === -1) return;
+
+    activeTouchInteraction = { cleanup: () => { } };
+    const startY = e.touches[0].clientY;
+    const initialYOffset = setupHighlights[targetHlIndex].yOffset || 0;
+
+    const onMove = (me: TouchEvent) => {
+      me.preventDefault(); // 防止滾動畫布
+      const dy = (me.touches[0].clientY - startY) / currentScale;
+      setSetupHighlights((prev) =>
+        prev.map((h, i) =>
+          i === targetHlIndex ? { ...h, yOffset: initialYOffset + dy } : h
+        )
+      );
+    };
+
+    const onEnd = () => {
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+      activeTouchInteraction = null;
+    };
+
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+  };
+
   const handleAssetMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const asset = assets.find((a) => a.id === id);
@@ -705,11 +891,14 @@ const App: React.FC = () => {
         return;
       }
       setAssets((prev) =>
-        prev.map((a) =>
-          initialPos[a.id]
-            ? { ...a, x: initialPos[a.id].x + dx, y: initialPos[a.id].y + dy }
-            : a,
-        ),
+        prev.map((a) => {
+          if (!initialPos[a.id]) return a;
+          let newX = initialPos[a.id].x + dx;
+          if (a.id === "img-injury-main") {
+            // Clamping removed, now masked visually
+          }
+          return { ...a, x: newX, y: initialPos[a.id].y + dy };
+        }),
       );
     };
 
@@ -1948,15 +2137,16 @@ const App: React.FC = () => {
 
         const numPairs = Math.max(setupHighlights.length, 1);
         setupHighlights.forEach((hl, idx) => {
+          const yOffset = hl.yOffset || 0;
           let rTitleY: number, rContentY: number;
           if (numPairs === 1) {
-            rTitleY = 250;
-            rContentY = 334;
+            rTitleY = 250 + yOffset;
+            rContentY = 334 + yOffset;
           } else {
             const maxInterval = (800 - 120 - 170) / (numPairs - 1);
             const interval = Math.min(250, maxInterval);
-            rTitleY = 170 + idx * interval;
-            rContentY = rTitleY + 84;
+            rTitleY = 170 + idx * interval + yOffset;
+            rContentY = 170 + idx * interval + 84 + yOffset;
           }
 
           const uId = hl.id;
@@ -1998,233 +2188,104 @@ const App: React.FC = () => {
         });
       }
     } else if (type === "injury") {
-      const uniqueId = `${baseId}-injury`;
-      const hasMainTitle = customMainTitle.trim() !== "";
+      const natW = 524;
+      const natH = 1456;
+      const targetH = 900;
+      const scale = targetH / natH;
+      const targetW = natW * scale;
+      const baseX = 480 - targetW / 2; // Fixed at 218
 
-      // 1. 大標題
-      const mainTitle: Asset = {
-        id: `title-main-${uniqueId}`,
-        type: "title",
-        x: 140,
-        y: 60,
-        scaleX: 1,
-        scaleY: 1,
-        baseW: 1400,
-        baseH: 100,
-        opacity: 1,
-        bgOpacity: 1,
-        name: `傷勢圖大標題`,
-        visible: hasMainTitle,
-        font: "'Noto Sans TC', sans-serif",
-        size: 110,
-        theme: "default",
-        text: customMainTitle || "事故傷勢報告",
-        width: 1320,
-        letterSpacing: 0,
-        borderRadius: 0,
-        showBackground: true,
-        showStroke: false,
-        strokeWidth: 0,
-        autoWrap: false,
-        layoutType: "injury",
-        fontWeight: 900,
-        customBgColor: "#b91c1c", // red-700
-        textAlign: "center"
-      };
-
-      // 2. 人物主圖與底板
-      // 左側容器：寬 450, 高 800, 置中於左側 1/3
-      // 左側 1/3 中心 = 640 / 2 = 320
-      // 容器 X = 320 - (450/2) = 95
-      const injuryContainer: Asset = {
-        id: `bg-injury-${uniqueId}`,
-        type: "highlight",
-        x: 95,
-        y: 180,
-        scaleX: 1,
-        scaleY: 1,
-        baseW: 450,
-        baseH: 800,
-        opacity: 1,
-        bgOpacity: 1,
-        name: `傷勢圖背景底板`,
-        visible: true,
-        font: "",
-        size: 0,
-        theme,
-        width: 450,
-        letterSpacing: 0,
-        borderRadius: 24, // 3xl
-        showBackground: true,
-        showStroke: true,
-        strokeWidth: 1,
-        customBgColor: "rgba(30, 41, 59, 0.5)", // slate-800/50
-        strokeColor: "rgba(255, 255, 255, 0.1)", // white/10
-        layoutType: "injury_bg"
-      };
-
-      const injuryImg: Asset = {
-        id: `img-injury-${uniqueId}`,
+      imageAssets = [{
+        id: "img-injury-main",
         type: "image",
         src: INJURY_BASE_IMAGES[setupInjuryRotationIndex],
-        originalSrc: INJURY_BASE_IMAGES[setupInjuryRotationIndex],
-        x: 95, 
-        y: 180,
-        scaleX: 1,
-        scaleY: 1,
-        baseW: 450,
-        baseH: 800,
-        opacity: 1,
-        bgOpacity: 1.0,
-        name: `傷勢圖人物`,
-        visible: true,
-        font: "",
-        size: 0,
-        theme,
-        width: 450,
-        letterSpacing: 0,
-        borderRadius: 0,
-        showBackground: false,
-        showStroke: false,
-        strokeWidth: 0,
-        groupId: mainGroupId,
-        layoutType: "injury",
-        imageNaturalWidth: 800,
-        imageNaturalHeight: 800,
-        imageTransform: { x: 0, y: 0, scale: 1.5 } // 1.5x 縮放以符合參考專案比例
-      };
+        x: baseX,
+        y: 540 - targetH / 2,
+        scaleX: 1, scaleY: 1,
+        baseW: targetW, baseH: targetH,
+        opacity: 1, bgOpacity: 1, name: "人物圖片", visible: true,
+        font: "", size: 0, theme, width: targetW, letterSpacing: 0,
+        borderRadius: 0, showBackground: false, showStroke: false, strokeWidth: 0,
+        groupId: "injury-group",
+        imageNaturalWidth: natW,
+        imageNaturalHeight: natH,
+        imageTransform: {
+          x: 0,
+          y: 0,
+          scale: scale
+        },
+      }];
 
-      imageAssets = [injuryImg];
-      textAssets = [injuryContainer, mainTitle];
+      textAssets = [];
 
-      // 3. 傷勢點位與標籤 (點位使用 setupHighlights)
-      const numPoints = setupHighlights.length;
-      setupHighlights.forEach((hl, idx) => {
-        const pointId = `point-${hl.id}`;
-        const labelTitleId = `title-r${idx + 1}-${uniqueId}`;
-        const labelContentId = `content-r${idx + 1}-${uniqueId}`;
-        const pointLabelId = `point-idx-${hl.id}`;
+      const sortedInjuryHighlights = [...setupHighlights].sort((a, b) => a.y - b.y);
+      const numPairs = Math.max(sortedInjuryHighlights.length, 1);
+      sortedInjuryHighlights.forEach((hl, idx) => {
+        let rTitleY: number, rContentY: number;
+        if (numPairs === 1) {
+          rTitleY = 250;
+          rContentY = 334;
+        } else {
+          const maxInterval = (800 - 120 - 170) / (numPairs - 1);
+          const interval = Math.min(250, maxInterval);
+          rTitleY = 170 + idx * interval;
+          rContentY = rTitleY + 84;
+        }
 
-        const labelX = 970;
-        const interval = numPoints > 1 ? Math.min(250, (800 - 120 - 170) / (numPoints - 1)) : 250;
-        const labelYBase = numPoints === 1 ? 250 : (170 + idx * interval);
+        const uId = hl.id;
+        const tId = `title-sh-${uId}`;
+        const cId = `content-sh-${uId}`;
 
-        // 點位 Pin (w-5 h-5 in ref => 20x20)
-        const pointAsset: Asset = {
-          id: pointId,
-          type: "highlight",
-          x: hl.x,
-          y: hl.y,
-          scaleX: 1,
-          scaleY: 1,
-          baseW: 24,
-          baseH: 24,
-          opacity: 1,
-          bgOpacity: 1,
-          name: `傷勢點位 ${idx + 1}`,
-          visible: true,
-          font: "",
-          size: 0,
-          theme,
-          width: 24,
-          letterSpacing: 0,
-          borderRadius: 12,
-          showBackground: true,
-          showStroke: true,
-          strokeWidth: 2,
-          customBgColor: "#ef4444", // red-500
-          strokeColor: "white",
-          linkedAssetIds: [labelTitleId, labelContentId],
-          layoutType: "injury"
+        let currentT = `部位 ${idx + 1}`;
+        if (customTitles && customTitles.length > idx && customTitles[idx] !== undefined) {
+          currentT = customTitles[idx];
+        } else {
+          const existingT = findExisting(tId);
+          if (existingT) currentT = existingT.text;
+        }
+
+        let currentC = `傷勢說明 ${idx + 1}`;
+        if (customContents && customContents.length > idx && customContents[idx] !== undefined) {
+          currentC = customContents[idx];
+        } else {
+          const existingC = findExisting(cId);
+          if (existingC && existingC.items && existingC.items.length > 0) currentC = existingC.items[0];
+        }
+
+        const hasTitle = currentT.trim().length > 0;
+        const hasContent = currentC.trim().length > 0;
+        const actualContentY = hasTitle ? rContentY : rTitleY;
+        const yOffset = hl.yOffset || 0;
+
+        // Calculate mapped point for the red dot
+        const centerX = hl.x + hl.width / 2;
+        const centerY = hl.y + hl.height / 2;
+        const unprojectedX = ((centerX - 218) - setupInjuryTransform.x) / setupInjuryTransform.scale;
+        const unprojectedY = ((centerY - 90) - setupInjuryTransform.y) / setupInjuryTransform.scale;
+        // Use raw uId so that handleSetupHighlightMouseDown works in Setup screen
+        const hId = uId;
+        const hAsset: Asset = {
+          id: hId, type: "highlight", x: 218 + setupInjuryTransform.x + unprojectedX * setupInjuryTransform.scale - 12, y: 90 + setupInjuryTransform.y + unprojectedY * setupInjuryTransform.scale - 12, scaleX: 1, scaleY: 1, baseW: 24, baseH: 24,
+          opacity: 1, bgOpacity: 1, name: `📍部位標記 ${idx + 1}`, visible: true, font: "", size: 0, theme, width: 24,
+          letterSpacing: 0, borderRadius: 12, showBackground: false, showStroke: false, strokeWidth: 0,
+          customBgColor: "#ef4444", strokeColor: "#ef4444", linkedAssetIds: hasTitle ? [tId] : (hasContent ? [cId] : []),
+          groupId: "injury-group", layoutType: "injury"
         };
 
-        // 點位上的 P1, P2 標籤
-        const pointIndexLabel: Asset = {
-          id: pointLabelId,
-          type: "title",
-          text: `P${idx+1}`,
-          x: hl.x - 15,
-          y: hl.y - 35,
-          scaleX: 1,
-          scaleY: 1,
-          baseW: 54,
-          baseH: 24,
-          opacity: 1,
-          bgOpacity: 1,
-          name: `點位編號 ${idx + 1}`,
-          visible: true,
-          font: "'Noto Sans TC', sans-serif",
-          size: 20,
-          theme,
-          width: 54,
-          letterSpacing: 0,
-          borderRadius: 4,
-          showBackground: true,
-          showStroke: false,
-          strokeWidth: 0,
-          fontWeight: 900,
-          customBgColor: "#dc2626", // red-600
-          textColor: "white",
-          textAlign: "center"
+        const tAsset: Asset = {
+          id: tId, type: "title", text: currentT, x: 970, y: rTitleY + yOffset, scaleX: 1, scaleY: 1, baseW: 780, baseH: 80,
+          opacity: 1, bgOpacity: 1, name: "部位標題", visible: hasTitle, font: "'Noto Sans TC', sans-serif", size: 60, theme, width: 780,
+          letterSpacing: 0, borderRadius: 0, showBackground: false, showStroke: false, strokeWidth: 0, fontWeight: 500, layoutType: "injury"
+        };
+        const cAsset: Asset = {
+          id: cId, type: "content", items: [currentC], x: 970, y: actualContentY + yOffset, scaleX: 1, scaleY: 1, baseW: 800, baseH: 150,
+          opacity: 1, bgOpacity: 1, name: "傷勢說明", visible: hasContent, font: "'Noto Sans TC', sans-serif", size: 40, theme, width: 720,
+          letterSpacing: 0, borderRadius: 0, showBackground: false, showStroke: false, strokeWidth: 0, autoWrap: true, textColor: "black", fontWeight: 500, layoutType: "injury"
         };
 
-        const labelTitle: Asset = {
-          id: labelTitleId,
-          type: "title",
-          text: customTitles[idx] || `傷勢點 ${idx + 1}`,
-          x: labelX,
-          y: labelYBase,
-          scaleX: 1,
-          scaleY: 1,
-          baseW: 780,
-          baseH: 80,
-          opacity: 1,
-          bgOpacity: 1,
-          name: `傷勢標題 ${idx + 1}`,
-          visible: true,
-          font: "'Noto Sans TC', sans-serif",
-          size: 60,
-          theme,
-          width: 780,
-          letterSpacing: 0,
-          borderRadius: 0,
-          showBackground: true,
-          showStroke: false,
-          strokeWidth: 0,
-          fontWeight: 900,
-          layoutType: "injury" // 使用專門的醫學風格
-        };
-
-        const labelContent: Asset = {
-          id: labelContentId,
-          type: "content",
-          items: [customContents[idx] || `輸入點位詳細說明`],
-          x: labelX,
-          y: labelYBase + 85,
-          scaleX: 1,
-          scaleY: 1,
-          baseW: 800,
-          baseH: 150,
-          opacity: 1,
-          bgOpacity: 1,
-          name: `傷勢內文 ${idx + 1}`,
-          visible: true,
-          font: "'Noto Sans TC', sans-serif",
-          size: 40,
-          theme,
-          width: 720,
-          letterSpacing: 0,
-          borderRadius: 0,
-          showBackground: false,
-          showStroke: false,
-          strokeWidth: 0,
-          autoWrap: true,
-          textColor: "white",
-          fontWeight: 500,
-          layoutType: "injury"
-        };
-
-        textAssets.push(pointAsset, pointIndexLabel, labelTitle, labelContent);
+        if (setupHighlights.length > 0) {
+          textAssets.push(hAsset, tAsset, cAsset);
+        }
       });
     } else if (type === "social") {
       // 社會 NCCG 版型 (目前與單框共用邏輯)
@@ -2509,59 +2570,102 @@ const App: React.FC = () => {
 
       // 2. 依次輸出圖層陣列中的所有元件 (包含裝飾層)
       let stepCounter = 1;
+      let injuryCounter = 1;
       const processedHighlightIds = new Set<string>();
-      currentAssets.forEach((asset) => {
-        if (!asset.visible) return;
 
-        // 跳過資料來源的獨立圈層，我們將其附加在圖片輸出中
-        if (asset.id.startsWith("source-")) {
-          return;
+      if (setupFormat === "injury") {
+        const nonInjuryAssets = currentAssets.filter((asset) => {
+          if (!asset.visible) return false;
+          if (asset.id.startsWith("source-")) return false;
+          if (asset.type === "highlight" || asset.id.includes("-sh-")) return false;
+          return true;
+        });
+
+        if (nonInjuryAssets.length > 0) {
+          const layerIdx = stepCounter.toString().padStart(2, '0');
+          stepCounter++;
+          steps.push({
+            name: `${layerIdx}_人物加藍灰色底`,
+            filter: (a) => nonInjuryAssets.some(na => na.id === a.id || (na.type === 'image' && a.id === na.id.replace('img-', 'source-'))),
+            showBg: false
+          });
         }
 
-        if (asset.type === "highlight" || asset.id.includes("-sh-")) {
-          const match = asset.id.match(/(shl-\d+)/);
-          if (match) {
-            const hId = match[1];
-            if (processedHighlightIds.has(hId)) return;
-            processedHighlightIds.add(hId);
+        currentAssets.forEach((asset) => {
+          if (!asset.visible) return;
+          if (asset.type === "highlight" || asset.id.includes("-sh-")) {
+            const match = asset.id.match(/(shl-\d+)/);
+            if (match) {
+              const hId = match[1];
+              if (processedHighlightIds.has(hId)) return;
+              processedHighlightIds.add(hId);
 
-            const layerIdx = stepCounter.toString().padStart(2, '0');
-            stepCounter++;
+              const layerIdx = stepCounter.toString().padStart(2, '0');
+              stepCounter++;
+              steps.push({
+                name: `${layerIdx}_部位${injuryCounter}傷勢${injuryCounter}`,
+                filter: (a) => a.id.includes(hId),
+                showBg: false,
+                targetUId: hId
+              });
+              injuryCounter++;
+            }
+          }
+        });
+      } else {
+        currentAssets.forEach((asset) => {
+          if (!asset.visible) return;
 
-            steps.push({
-              name: `${layerIdx}_螢光筆重點組`,
-              filter: (a) => a.id.includes(hId),
-              showBg: false,
-              targetUId: hId
-            });
+          // 跳過資料來源的獨立圈層，我們將其附加在圖片輸出中
+          if (asset.id.startsWith("source-")) {
             return;
           }
-        }
 
-        // 使用圖層順序 (1-based, 因 00 保留給底圖) 加上 0 補位確保排序正確
-        const layerIdx = stepCounter.toString().padStart(2, '0');
-        stepCounter++;
+          if (asset.type === "highlight" || asset.id.includes("-sh-")) {
+            const match = asset.id.match(/(shl-\d+)/);
+            if (match) {
+              const hId = match[1];
+              if (processedHighlightIds.has(hId)) return;
+              processedHighlightIds.add(hId);
 
-        // 解析有意義的名稱，若無則使用類別
-        const typeNameMap: Record<string, string> = {
-          "block": "裝飾背景",
-          "image": "圖片",
-          "title": "標題",
-          "content": "內文"
-        };
-        const safeName = asset.name || typeNameMap[asset.type] || "元件";
+              const layerIdx = stepCounter.toString().padStart(2, '0');
+              stepCounter++;
 
-        steps.push({
-          name: `${layerIdx}_${safeName}`,
-          filter: (a) => {
-            if (a.id === asset.id) return true;
-            // 圖片順便帶出其關聯的來源文字層
-            if (asset.type === 'image' && a.id === asset.id.replace('img-', 'source-')) return true;
-            return false;
-          },
-          showBg: false
+              steps.push({
+                name: `${layerIdx}_螢光筆重點組`,
+                filter: (a) => a.id.includes(hId),
+                showBg: false,
+                targetUId: hId
+              });
+              return;
+            }
+          }
+
+          // 使用圖層順序 (1-based, 因 00 保留給底圖) 加上 0 補位確保排序正確
+          const layerIdx = stepCounter.toString().padStart(2, '0');
+          stepCounter++;
+
+          // 解析有意義的名稱，若無則使用類別
+          const typeNameMap: Record<string, string> = {
+            "block": "裝飾背景",
+            "image": "圖片",
+            "title": "標題",
+            "content": "內文"
+          };
+          let safeName = asset.name || typeNameMap[asset.type] || "元件";
+
+          steps.push({
+            name: `${layerIdx}_${safeName}`,
+            filter: (a) => {
+              if (a.id === asset.id) return true;
+              // 圖片順便帶出其關聯的來源文字層
+              if (asset.type === 'image' && a.id === asset.id.replace('img-', 'source-')) return true;
+              return false;
+            },
+            showBg: false
+          });
         });
-      });
+      }
 
       const timestamp = Date.now();
       const ref = appStage === "setup" ? setupCanvasRef : canvasRef;
@@ -2575,6 +2679,42 @@ const App: React.FC = () => {
           height: 1080,
           useCORS: true,
           logging: false,
+          ignoreElements: (element) => {
+            if (element.classList) {
+              if (element.classList.contains("safety-overlay") ||
+                element.classList.contains("marquee-box") ||
+                element.classList.contains("transform-handle") ||
+                element.classList.contains("marquee-drag")) {
+                return true;
+              }
+            }
+            if (element.getAttribute) {
+              const aId = element.getAttribute("data-asset-id");
+              if (aId) {
+                const asset = currentAssets.find(a => a.id === aId);
+                if (asset && !step.filter(asset)) return true;
+              }
+              const mId = element.getAttribute("data-mask-id");
+              if (mId) {
+                const asset = currentAssets.find(a => a.id === mId);
+                if (asset && !step.filter(asset)) return true;
+              }
+              const svgId = element.getAttribute("data-uid");
+              if (svgId && (element.tagName.toLowerCase() === 'path' || element.tagName.toLowerCase() === 'circle')) {
+                if (step.targetUId) {
+                  if (svgId !== step.targetUId) return true;
+                } else if (step.cumulativeUIds) {
+                  if (!step.cumulativeUIds.includes(svgId)) return true;
+                } else {
+                  return true;
+                }
+              }
+              if (element.tagName.toLowerCase() === 'img' && element.getAttribute("alt") === "Background") {
+                if (!step.showBg) return true;
+              }
+            }
+            return false;
+          },
           onclone: (clonedDoc) => {
             // 隱藏標準疊加層
             clonedDoc
@@ -2617,8 +2757,23 @@ const App: React.FC = () => {
             const currentAssets = appStage === "setup" ? previewAssets : assets;
             currentAssets.forEach(a => {
               const el = clonedDoc.querySelector(`[data-asset-id="${a.id}"]`) as HTMLElement;
+              const maskEl = clonedDoc.querySelector(`[data-mask-id="${a.id}"]`) as HTMLElement;
+              const shouldShow = step.filter(a);
+
+              if (maskEl) {
+                if (!shouldShow) {
+                  maskEl.remove();
+                } else {
+                  maskEl.style.display = "block";
+                }
+              }
+
               if (el) {
-                el.style.display = step.filter(a) ? "flex" : "none";
+                if (!shouldShow) {
+                  el.remove();
+                } else {
+                  el.style.display = "flex";
+                }
               }
             });
 
@@ -2676,62 +2831,116 @@ const App: React.FC = () => {
 
       // 2. 依次疊加元件
       let stepCounter = 1;
+      let injuryCounter = 1;
       const accumulatedIds: string[] = [];
       const processedHighlightIds = new Set<string>();
 
-      currentAssets.forEach((asset) => {
-        if (!asset.visible) return;
-        if (asset.id.startsWith("source-")) return;
-
-        if (asset.type === "highlight" || asset.id.includes("-sh-")) {
-          const match = asset.id.match(/(shl-\d+)/);
-          if (match) {
-            const hId = match[1];
-            if (processedHighlightIds.has(hId)) return;
-            processedHighlightIds.add(hId);
-
-            const groupAssets = currentAssets.filter(a => a.id.includes(hId));
-            groupAssets.forEach(ga => accumulatedIds.push(ga.id));
-
-            const layerIdx = stepCounter.toString().padStart(2, '0');
-            stepCounter++;
-
-            const currentIds = [...accumulatedIds];
-            steps.push({
-              name: `${layerIdx}_疊加螢光筆重點`,
-              filter: (a) => currentIds.includes(a.id),
-              showBg: !!(bgImageUrl && canvasBgVisible),
-              cumulativeUIds: Array.from(processedHighlightIds)
-            });
-            return;
-          }
-        }
-
-        accumulatedIds.push(asset.id);
-        if (asset.type === 'image') {
-          accumulatedIds.push(asset.id.replace('img-', 'source-'));
-        }
-
-        const layerIdx = stepCounter.toString().padStart(2, '0');
-        stepCounter++;
-
-        const typeNameMap: Record<string, string> = {
-          "block": "裝飾背景",
-          "image": "圖片",
-          "title": "標題",
-          "content": "內文"
-        };
-        const safeName = asset.name || typeNameMap[asset.type] || "元件";
-
-        const currentIds = [...accumulatedIds];
-
-        steps.push({
-          name: `${layerIdx}_疊加至_${safeName}`,
-          filter: (a) => currentIds.includes(a.id),
-          showBg: !!(bgImageUrl && canvasBgVisible),
-          cumulativeUIds: Array.from(processedHighlightIds)
+      if (setupFormat === "injury") {
+        const nonInjuryAssets = currentAssets.filter((asset) => {
+          if (!asset.visible) return false;
+          if (asset.id.startsWith("source-")) return false;
+          if (asset.type === "highlight" || asset.id.includes("-sh-")) return false;
+          return true;
         });
-      });
+
+        if (nonInjuryAssets.length > 0) {
+          nonInjuryAssets.forEach(a => {
+            accumulatedIds.push(a.id);
+            if (a.type === 'image') accumulatedIds.push(a.id.replace('img-', 'source-'));
+          });
+
+          const layerIdx = stepCounter.toString().padStart(2, '0');
+          stepCounter++;
+          const currentIds = [...accumulatedIds];
+          steps.push({
+            name: `${layerIdx}_疊加至_人物加藍灰色底`,
+            filter: (a) => currentIds.includes(a.id),
+            showBg: !!(bgImageUrl && canvasBgVisible),
+            cumulativeUIds: []
+          });
+        }
+
+        currentAssets.forEach((asset) => {
+          if (!asset.visible) return;
+          if (asset.type === "highlight" || asset.id.includes("-sh-")) {
+            const match = asset.id.match(/(shl-\d+)/);
+            if (match) {
+              const hId = match[1];
+              if (processedHighlightIds.has(hId)) return;
+              processedHighlightIds.add(hId);
+
+              const groupAssets = currentAssets.filter(a => a.id.includes(hId));
+              groupAssets.forEach(ga => accumulatedIds.push(ga.id));
+
+              const layerIdx = stepCounter.toString().padStart(2, '0');
+              stepCounter++;
+              const currentIds = [...accumulatedIds];
+
+              steps.push({
+                name: `${layerIdx}_疊加部位${injuryCounter}傷勢${injuryCounter}`,
+                filter: (a) => currentIds.includes(a.id),
+                showBg: !!(bgImageUrl && canvasBgVisible),
+                cumulativeUIds: Array.from(processedHighlightIds)
+              });
+              injuryCounter++;
+            }
+          }
+        });
+      } else {
+        currentAssets.forEach((asset) => {
+          if (!asset.visible) return;
+          if (asset.id.startsWith("source-")) return;
+
+          if (asset.type === "highlight" || asset.id.includes("-sh-")) {
+            const match = asset.id.match(/(shl-\d+)/);
+            if (match) {
+              const hId = match[1];
+              if (processedHighlightIds.has(hId)) return;
+              processedHighlightIds.add(hId);
+
+              const groupAssets = currentAssets.filter(a => a.id.includes(hId));
+              groupAssets.forEach(ga => accumulatedIds.push(ga.id));
+
+              const stepName = `${stepCounter.toString().padStart(2, '0')}_疊加螢光筆重點`;
+              stepCounter++;
+
+              const currentIds = [...accumulatedIds];
+              steps.push({
+                name: stepName,
+                filter: (a) => currentIds.includes(a.id),
+                showBg: !!(bgImageUrl && canvasBgVisible),
+                cumulativeUIds: Array.from(processedHighlightIds)
+              });
+              return;
+            }
+          }
+
+          accumulatedIds.push(asset.id);
+          if (asset.type === 'image') {
+            accumulatedIds.push(asset.id.replace('img-', 'source-'));
+          }
+
+          const typeNameMap: Record<string, string> = {
+            "block": "裝飾背景",
+            "image": "圖片",
+            "title": "標題",
+            "content": "內文"
+          };
+          const safeName = asset.name || typeNameMap[asset.type] || "元件";
+
+          const stepName = `${stepCounter.toString().padStart(2, '0')}_疊加至_${safeName}`;
+          stepCounter++;
+
+          const currentIds = [...accumulatedIds];
+
+          steps.push({
+            name: stepName,
+            filter: (a) => currentIds.includes(a.id),
+            showBg: !!(bgImageUrl && canvasBgVisible),
+            cumulativeUIds: Array.from(processedHighlightIds)
+          });
+        });
+      }
 
       const timestamp = Date.now();
 
@@ -2744,6 +2953,42 @@ const App: React.FC = () => {
           height: 1080,
           useCORS: true,
           logging: false,
+          ignoreElements: (element) => {
+            if (element.classList) {
+              if (element.classList.contains("safety-overlay") ||
+                element.classList.contains("marquee-box") ||
+                element.classList.contains("transform-handle") ||
+                element.classList.contains("marquee-drag")) {
+                return true;
+              }
+            }
+            if (element.getAttribute) {
+              const aId = element.getAttribute("data-asset-id");
+              if (aId) {
+                const asset = currentAssets.find(a => a.id === aId);
+                if (asset && !step.filter(asset)) return true;
+              }
+              const mId = element.getAttribute("data-mask-id");
+              if (mId) {
+                const asset = currentAssets.find(a => a.id === mId);
+                if (asset && !step.filter(asset)) return true;
+              }
+              const svgId = element.getAttribute("data-uid");
+              if (svgId && (element.tagName.toLowerCase() === 'path' || element.tagName.toLowerCase() === 'circle')) {
+                if (step.targetUId) {
+                  if (svgId !== step.targetUId) return true;
+                } else if (step.cumulativeUIds) {
+                  if (!step.cumulativeUIds.includes(svgId)) return true;
+                } else {
+                  return true;
+                }
+              }
+              if (element.tagName.toLowerCase() === 'img' && element.getAttribute("alt") === "Background") {
+                if (!step.showBg) return true;
+              }
+            }
+            return false;
+          },
           onclone: (clonedDoc) => {
             clonedDoc
               .querySelectorAll(".safety-overlay, .marquee-box, .transform-handle, .marquee-drag")
@@ -2782,8 +3027,23 @@ const App: React.FC = () => {
 
             currentAssets.forEach(a => {
               const el = clonedDoc.querySelector(`[data-asset-id="${a.id}"]`) as HTMLElement;
+              const maskEl = clonedDoc.querySelector(`[data-mask-id="${a.id}"]`) as HTMLElement;
+              const shouldShow = step.filter(a);
+
+              if (maskEl) {
+                if (!shouldShow) {
+                  maskEl.remove();
+                } else {
+                  maskEl.style.display = "block";
+                }
+              }
+
               if (el) {
-                el.style.display = step.filter(a) ? "flex" : "none";
+                if (!shouldShow) {
+                  el.remove();
+                } else {
+                  el.style.display = "flex";
+                }
               }
             });
 
@@ -3193,6 +3453,17 @@ const App: React.FC = () => {
     const asset = assets.find((a) => a.id === id);
     if (!asset || asset.type !== "image" || !asset.imageNaturalWidth) return;
 
+    if (id === "img-injury-main" && typeof INJURY_BASE_IMAGES !== 'undefined') {
+      const scale = 900 / 1456;
+      updateAsset(id, {
+        imageTransform: { x: 0, y: 0, scale: scale },
+        src: INJURY_BASE_IMAGES[0]
+      });
+      setSetupInjuryRotationIndex(0);
+      setSetupInjuryTransform({ x: 0, y: 0, scale: scale });
+      return;
+    }
+
     const natW = asset.imageNaturalWidth;
     const natH = asset.imageNaturalHeight || 1;
     const scale = Math.max(asset.baseW / natW, asset.baseH / natH);
@@ -3505,9 +3776,12 @@ const App: React.FC = () => {
       activeTouchInteraction = null;
     }
 
-    if (!asset || asset.type !== "image" || !asset.imageTransform || !setupImages[index]) return;
+    const isInjury = asset && asset.id === "img-injury-main";
+    if (!asset || asset.type !== "image" || !asset.imageTransform || (!isInjury && !setupImages[index])) return;
+    if (isHighlighterMode && (setupFormat === "pullout" || setupFormat === "injury")) return;
 
-    const initialTransform = asset.imageTransform ? { ...asset.imageTransform } : { x: 0, y: 0, scale: 1 };
+    const initialTransform = isInjury ? setupInjuryTransform : (asset.imageTransform || { x: 0, y: 0, scale: 1 });
+    let finalInjuryTransform = { ...initialTransform };
     let initialTouches = Array.from(e.touches) as React.Touch[];
 
     let initialDistance = 0;
@@ -3532,15 +3806,30 @@ const App: React.FC = () => {
         const dx = (currentTouches[0].clientX - initialTouches[0].clientX) / (currentSetupPreviewScale * asset.scaleX);
         const dy = (currentTouches[0].clientY - initialTouches[0].clientY) / (currentSetupPreviewScale * asset.scaleY);
 
-        setSetupImages(prev => {
-          const newImgs = [...prev];
-          newImgs[index].transform = {
-            ...initialTransform,
-            x: initialTransform.x + dx,
-            y: initialTransform.y + dy,
-          };
-          return newImgs;
-        });
+        if (isInjury) {
+          const el = document.querySelector(`[data-asset-id="${asset.id}"]`) as HTMLElement;
+          const newX = initialTransform.x + dx;
+          const newY = initialTransform.y + dy;
+          if (el) {
+            el.style.left = `${asset.x + newX}px`;
+            el.style.top = `${asset.y + newY}px`;
+          }
+          const hudX = document.getElementById("hud-injury-x");
+          if (hudX) hudX.textContent = Math.round(newX).toString();
+          const hudY = document.getElementById("hud-injury-y");
+          if (hudY) hudY.textContent = Math.round(newY).toString();
+          finalInjuryTransform = { ...initialTransform, x: newX, y: newY };
+        } else {
+          setSetupImages(prev => {
+            const newImgs = [...prev];
+            newImgs[index].transform = {
+              ...initialTransform,
+              x: initialTransform.x + dx,
+              y: initialTransform.y + dy,
+            };
+            return newImgs;
+          });
+        }
       } else if (currentTouches.length >= 2) {
         // 雙指平移與縮放
         const currentDistance = getDistance(currentTouches[0], currentTouches[1]);
@@ -3553,6 +3842,7 @@ const App: React.FC = () => {
 
         const scaleFactor = currentDistance / initialDistance;
         let newScale = Math.max(0.01, initialTransform.scale * scaleFactor);
+        if (isInjury) newScale = Math.max(1.0, Math.min(newScale, 3.0));
 
         const dx = (currentCenter.x - initialCenter.x) / (currentSetupPreviewScale * asset.scaleX);
         const dy = (currentCenter.y - initialCenter.y) / (currentSetupPreviewScale * asset.scaleY);
@@ -3568,15 +3858,33 @@ const App: React.FC = () => {
         const zoomAdjustX = mouseX - cx * newScale;
         const zoomAdjustY = mouseY - cy * newScale;
 
-        setSetupImages(prev => {
-          const newImgs = [...prev];
-          newImgs[index].transform = {
-            x: zoomAdjustX + dx,
-            y: zoomAdjustY + dy,
-            scale: newScale,
-          };
-          return newImgs;
-        });
+        if (isInjury) {
+          const el = document.querySelector(`[data-asset-id="${asset.id}"]`) as HTMLElement;
+          const newX = zoomAdjustX + dx;
+          const newY = zoomAdjustY + dy;
+          if (el) {
+            el.style.left = `${asset.x + newX}px`;
+            el.style.top = `${asset.y + newY}px`;
+            el.style.transform = `scale(${newScale})`;
+          }
+          const hudX = document.getElementById("hud-injury-x");
+          if (hudX) hudX.textContent = Math.round(newX).toString();
+          const hudY = document.getElementById("hud-injury-y");
+          if (hudY) hudY.textContent = Math.round(newY).toString();
+          const hudS = document.getElementById("hud-injury-s");
+          if (hudS) hudS.textContent = `Scale: ${newScale.toFixed(2)}x`;
+          finalInjuryTransform = { x: newX, y: newY, scale: newScale };
+        } else {
+          setSetupImages(prev => {
+            const newImgs = [...prev];
+            newImgs[index].transform = {
+              x: zoomAdjustX + dx,
+              y: zoomAdjustY + dy,
+              scale: newScale,
+            };
+            return newImgs;
+          });
+        }
       }
     };
 
@@ -3590,6 +3898,9 @@ const App: React.FC = () => {
       cleanup();
       if (activeTouchInteraction?.cleanup === cleanup) {
         activeTouchInteraction = null;
+      }
+      if (isInjury) {
+        setSetupInjuryTransform(finalInjuryTransform);
       }
     };
 
@@ -3726,6 +4037,8 @@ const App: React.FC = () => {
       setAppStage("setup");
       setIsHighlighterMode(false);
       setSetupHighlights([]);
+      setSetupInjuryRotationIndex(0);
+      setSetupInjuryTransform({ x: 0, y: 0, scale: 1 });
     }
   };
 
@@ -3836,8 +4149,8 @@ const App: React.FC = () => {
       { id: "double", name: "雙框", icon: "◫" },
       { id: "triple", name: "三框", icon: "▥" },
       { id: "pullout", name: "文章拉字", icon: "▤" },
+      { id: "injury", name: "傷勢圖", icon: "👤" },
       // 暫時隱藏
-      // { id: "injury", name: "傷勢圖", icon: "👤" },
       // { id: "social", name: "社會 NCCG", icon: "📱" },
     ];
 
@@ -3862,7 +4175,6 @@ const App: React.FC = () => {
         const startYC = (startY - rect.top) / setupPreviewScale;
 
         const onMove = (me: MouseEvent) => {
-          if (setupFormat === "injury") return; // 傷勢圖不需要拉預覽框
           const currentXC = (me.clientX - rect.left) / setupPreviewScale;
           const currentYC = (me.clientY - rect.top) / setupPreviewScale;
           setMarquee({
@@ -3876,20 +4188,24 @@ const App: React.FC = () => {
         const onUp = (me: MouseEvent) => {
           const currentXC = (me.clientX - rect.left) / setupPreviewScale;
           const currentYC = (me.clientY - rect.top) / setupPreviewScale;
-          
+
+          const boxW = Math.abs(currentXC - startXC);
+          const boxH = Math.abs(currentYC - startYC);
+
           if (setupFormat === "injury") {
-            // 傷勢圖模式：直接在點擊位置產生固定大小的 pin
-            setSetupHighlights(prev => [...prev, { 
-              id: `shl-${Date.now()}`, 
-              x: startXC - 20, // 置中
-              y: startYC - 20, 
-              width: 40, 
-              height: 40, 
-              color: "red" 
-            }]);
+            if (boxW > 10 || boxH > 10) {
+              setSetupHighlights(prev => [...prev, { id: `shl-${Date.now()}`, x: Math.min(startXC, currentXC), y: Math.min(startYC, currentYC), width: boxW, height: boxH, color: "red" }]);
+            } else {
+              setSetupHighlights(prev => [...prev, {
+                id: `shl-${Date.now()}`,
+                x: startXC - 20,
+                y: startYC - 20,
+                width: 40,
+                height: 40,
+                color: "red"
+              }]);
+            }
           } else {
-            const boxW = Math.abs(currentXC - startXC);
-            const boxH = Math.abs(currentYC - startYC);
             if (boxW > 20 && boxH > 20) {
               setSetupHighlights(prev => [...prev, { id: `shl-${Date.now()}`, x: Math.min(startXC, currentXC), y: Math.min(startYC, currentYC), width: boxW, height: boxH, color: highlightColor }]);
             }
@@ -3903,7 +4219,8 @@ const App: React.FC = () => {
         return;
       }
 
-      const currentTransform = asset.imageTransform || { x: 0, y: 0, scale: 1 };
+      const currentTransform = asset.id === "img-injury-main" ? setupInjuryTransform : (asset.imageTransform || { x: 0, y: 0, scale: 1 });
+      let finalInjuryTransform = { ...currentTransform };
       const startX = e.clientX;
       const startY = e.clientY;
 
@@ -3911,25 +4228,46 @@ const App: React.FC = () => {
         const dx = (me.clientX - startX) / (setupPreviewScale * (asset.scaleX || 1));
         const dy = (me.clientY - startY) / (setupPreviewScale * (asset.scaleY || 1));
 
-        setSetupImages(prev => {
-          const next = [...prev];
-          if (next[index]) {
-            next[index] = {
-              ...next[index],
-              transform: {
-                ...currentTransform,
-                x: currentTransform.x + dx,
-                y: currentTransform.y + dy,
-              }
-            };
+        if (asset.id === "img-injury-main") {
+          let newX = currentTransform.x + dx;
+          const newY = currentTransform.y + dy;
+          const currentScale = currentTransform.scale || 1;
+          const rightEdge = 218 + newX + (524 * currentScale);
+          // Clamping removed, now masked visually
+          const el = document.querySelector(`[data-asset-id="${asset.id}"]`) as HTMLElement;
+          if (el) {
+            el.style.left = `${asset.x + newX}px`;
+            el.style.top = `${asset.y + newY}px`;
           }
-          return next;
-        });
+          const hudX = document.getElementById("hud-injury-x");
+          if (hudX) hudX.textContent = Math.round(newX).toString();
+          const hudY = document.getElementById("hud-injury-y");
+          if (hudY) hudY.textContent = Math.round(newY).toString();
+          finalInjuryTransform = { ...currentTransform, x: newX, y: newY };
+        } else {
+          setSetupImages(prev => {
+            const next = [...prev];
+            if (next[index]) {
+              next[index] = {
+                ...next[index],
+                transform: {
+                  ...currentTransform,
+                  x: currentTransform.x + dx,
+                  y: currentTransform.y + dy,
+                }
+              };
+            }
+            return next;
+          });
+        }
       };
 
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        if (asset.id === "img-injury-main") {
+          setSetupInjuryTransform(finalInjuryTransform);
+        }
       };
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
@@ -3938,10 +4276,13 @@ const App: React.FC = () => {
     const handleSetupImageInnerWheel = (e: React.WheelEvent<HTMLDivElement>, index: number, asset: Asset) => {
       e.stopPropagation();
       e.preventDefault();
-      if (isHighlighterMode && setupFormat === "pullout") return;
-      const currentTransform = asset.imageTransform || { x: 0, y: 0, scale: 1 };
+      if (isHighlighterMode && (setupFormat === "pullout" || setupFormat === "injury")) return;
+      const currentTransform = asset.id === "img-injury-main" ? setupInjuryTransform : (asset.imageTransform || { x: 0, y: 0, scale: 1 });
       const scaleDelta = -e.deltaY * 0.001 * currentTransform.scale;
-      const newScale = Math.max(0.01, currentTransform.scale + scaleDelta);
+      let newScale = Math.max(0.01, currentTransform.scale + scaleDelta);
+      if (asset.id === "img-injury-main") {
+        newScale = Math.max(1.0, Math.min(newScale, 3.0));
+      }
 
       const rect = e.currentTarget.getBoundingClientRect();
       const mouseX = (e.clientX - rect.left) / (setupPreviewScale * (asset.scaleX || 1));
@@ -3954,20 +4295,28 @@ const App: React.FC = () => {
       const newX = mouseX - cx * newScale;
       const newY = mouseY - cy * newScale;
 
-      setSetupImages(prev => {
-        const next = [...prev];
-        if (next[index]) {
-          next[index] = {
-            ...next[index],
-            transform: {
-              x: newX,
-              y: newY,
-              scale: newScale,
-            }
-          };
-        }
-        return next;
-      });
+      if (asset.id === "img-injury-main") {
+        setSetupInjuryTransform({
+          x: newX,
+          y: newY,
+          scale: newScale,
+        });
+      } else {
+        setSetupImages(prev => {
+          const next = [...prev];
+          if (next[index]) {
+            next[index] = {
+              ...next[index],
+              transform: {
+                x: newX,
+                y: newY,
+                scale: newScale,
+              }
+            };
+          }
+          return next;
+        });
+      }
     };
 
     const resetSetupImageInnerTransform = (e: React.MouseEvent, index: number) => {
@@ -4177,6 +4526,7 @@ const App: React.FC = () => {
                   onClick={() => {
                     const next = setupFormat === f.id ? "" : f.id;
 
+                    // 處理人物橫式、雙框、三框切換時的補位邏輯，保持舊有功能
                     if (next === "profile") {
                       if (setupFormat === "double") {
                         setSetupTitles((prev) => [...prev, ...Array(Math.max(0, 2 - prev.length)).fill(undefined)]);
@@ -4187,21 +4537,31 @@ const App: React.FC = () => {
                       }
                     }
 
+                    // 當進入或離開 injury 版型時，重置所有文字與點位
+                    if (setupFormat === "injury" || next === "injury" || (setupFormat === "pullout" && next === "injury") || (setupFormat === "injury" && next === "pullout")) {
+                      setSetupTitles([]);
+                      setSetupContents([]);
+                      setSetupHighlights([]);
+                    }
+
                     setSetupFormat(next);
-                    if (next === "profile" && !bgImageUrl) {
+                    const isDefaultBg = !bgImageUrl || bgImageUrl.includes("githubusercontent.com");
+                    if (next === "profile" && isDefaultBg) {
                       setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%B0%8F%E6%AA%94%E6%A1%88)00.png");
-                    } else if ((next === "double" || next === "triple") && !bgImageUrl) {
+                    } else if ((next === "double" || next === "triple") && isDefaultBg) {
                       setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%AF%86%E7%B6%B2%E7%99%BD).jpg");
-                    } else if (next === "pullout" && !bgImageUrl) {
+                    } else if (next === "pullout" && isDefaultBg) {
                       setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%B0%8F%E6%AA%94%E6%A1%88)03.png");
                       setCanvasBgVisible(true);
-                    } else if (next === "injury" && !bgImageUrl) {
+                    } else if (next === "injury" && isDefaultBg) {
                       setBgImageUrl("https://raw.githubusercontent.com/ShareJohn/My_TVBS_Image/refs/heads/main/BG-image/BG-(%E5%AF%86%E7%B6%B2%E7%99%BD).jpg");
                       setCanvasBgVisible(true);
                     }
 
-                    if (next === "pullout" || next === "injury") {
+                    if (next === "pullout") {
                       setIsHighlighterMode(true);
+                    } else if (next === "injury") {
+                      setIsHighlighterMode(false); // 預設關閉點位模式以允許拖曳平移
                     }
                   }}
                   className={`flex flex-col items-center justify-center gap-2 p-3 rounded-xl border-2 transition-all ${setupFormat === f.id
@@ -4320,8 +4680,8 @@ const App: React.FC = () => {
           </div>
 
           {/* --------- 3 文字內容輸入 --------- */}
-          <div className={setupFormat === "pullout" ? "grid grid-cols-2 gap-4" : "space-y-6"}>
-            <div className={`space-y-6 ${setupFormat === "pullout" ? "min-w-0" : ""}`}>
+          <div className={(setupFormat === "pullout" || setupFormat === "injury") ? "grid grid-cols-2 gap-4" : "space-y-6"}>
+            <div className={`space-y-6 ${(setupFormat === "pullout" || setupFormat === "injury") ? "min-w-0" : ""}`}>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-xs">3</span>
                 文字內容輸入
@@ -4334,16 +4694,18 @@ const App: React.FC = () => {
               ) : (
                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                   {/* 大標題 */}
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">大標題</label>
-                    <input
-                      type="text"
-                      className="w-full bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none transition-all"
-                      placeholder="輸入主標題..."
-                      value={setupMainTitle ?? (setupFormat === "triple" ? "三框大標題" : setupFormat === "double" ? "雙框大標題" : "單框大標題")}
-                      onChange={(e) => setSetupMainTitle(e.target.value)}
-                    />
-                  </div>
+                  {setupFormat !== "injury" && (
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">大標題</label>
+                      <input
+                        type="text"
+                        className="w-full bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm focus:border-blue-500 outline-none transition-all"
+                        placeholder="輸入主標題..."
+                        value={setupMainTitle ?? (setupFormat === "triple" ? "三框大標題" : setupFormat === "double" ? "雙框大標題" : "單框大標題")}
+                        onChange={(e) => setSetupMainTitle(e.target.value)}
+                      />
+                    </div>
+                  )}
 
                   {/* 根據版型生成的動態區塊 */}
                   {setupFormat === "double" ? (
@@ -4474,8 +4836,8 @@ const App: React.FC = () => {
                   ) : (
                     <div className="space-y-4">
                       {(() => {
-                        const isSingleType = setupFormat === "profile" || setupFormat === "pullout";
-                        const groupCount = setupFormat === "pullout" ? Math.max(1, setupHighlights.length) : Math.max(1, setupTitles.length, setupContents.length);
+                        const isSingleType = setupFormat === "profile" || setupFormat === "pullout" || setupFormat === "injury";
+                        const groupCount = (setupFormat === "pullout" || setupFormat === "injury") ? Math.max(1, setupHighlights.length) : Math.max(1, setupTitles.length, setupContents.length);
                         const maxContentLines = isSingleType ? 14 - groupCount * 2 : 999;
                         const currentContentLines = isSingleType ? setupContents.reduce((acc, c) => {
                           if (!c || typeof c !== 'string') return acc;
@@ -4494,16 +4856,16 @@ const App: React.FC = () => {
                                 </div>
                               </div>
                             )}
-                            {(setupFormat === "pullout" ? setupHighlights : (setupTitles.length > 0 ? setupTitles : [undefined as any])).map((itemOrTitle, i) => {
-                              if (setupFormat !== "profile" && setupFormat !== "pullout" && i > 0) return null;
+                            {((setupFormat === "pullout" || setupFormat === "injury") ? setupHighlights : (setupTitles.length > 0 ? setupTitles : [undefined as any])).map((itemOrTitle, i) => {
+                              if (setupFormat !== "profile" && setupFormat !== "pullout" && setupFormat !== "injury" && i > 0) return null;
 
                               return (
-                                <div key={setupFormat === "pullout" ? itemOrTitle.id : i} className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5 relative group/item">
-                                  {((setupFormat === "profile" && setupTitles.length > 1) || setupFormat === "pullout") && (
+                                <div key={(setupFormat === "pullout" || setupFormat === "injury") ? itemOrTitle.id : i} className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5 relative group/item">
+                                  {((setupFormat === "profile" && setupTitles.length > 1) || setupFormat === "pullout" || setupFormat === "injury") && (
                                     <button
                                       className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full text-white text-[10px] opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-700 shadow-lg z-10"
                                       onClick={() => {
-                                        if (setupFormat === "pullout") {
+                                        if (setupFormat === "pullout" || setupFormat === "injury") {
                                           setSetupHighlights(prev => prev.filter((_, idx) => idx !== i));
                                         }
                                         setSetupTitles(prev => prev.filter((_, idx) => idx !== i));
@@ -4512,13 +4874,13 @@ const App: React.FC = () => {
                                     >✕</button>
                                   )}
                                   <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{setupFormat === "pullout" ? "螢光標題" : "小標題"} {setupFormat === "profile" || setupFormat === "pullout" ? i + 1 : ""}</label>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{setupFormat === "injury" ? "部位" : setupFormat === "pullout" ? "螢光標題" : "小標題"} {setupFormat === "profile" || setupFormat === "pullout" || setupFormat === "injury" ? i + 1 : ""}</label>
                                     <input
                                       type="text"
                                       maxLength={isSingleType ? 15 : undefined}
                                       placeholder="我是小標題我只能打十三個字"
                                       className="w-full bg-black/30 border border-white/10 rounded-lg p-2.5 text-xs focus:border-blue-500 outline-none transition-all"
-                                      value={setupTitles[i] ?? (setupFormat === "pullout" ? `新增螢光筆重點${i + 1}` : i === 0 ? "我是小標題1" : `新增小標${i + 1}`)}
+                                      value={setupTitles[i] ?? (setupFormat === "injury" ? `部位 ${i + 1}` : setupFormat === "pullout" ? `新增螢光筆重點${i + 1}` : i === 0 ? "我是小標題1" : `新增小標${i + 1}`)}
                                       onChange={(e) => {
                                         const newT = [...setupTitles];
                                         newT[i] = e.target.value;
@@ -4527,11 +4889,11 @@ const App: React.FC = () => {
                                     />
                                   </div>
                                   <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{setupFormat === "pullout" ? "螢光內文" : "單框內文"} {setupFormat === "profile" || setupFormat === "pullout" ? i + 1 : ""}</label>
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{setupFormat === "injury" ? "傷勢" : setupFormat === "pullout" ? "螢光內文" : "單框內文"} {setupFormat === "profile" || setupFormat === "pullout" || setupFormat === "injury" ? i + 1 : ""}</label>
                                     <textarea
                                       placeholder="我是內文一排約能打廿個字"
                                       className={`w-full h-24 bg-black/30 border ${isSingleType && currentContentLines >= maxContentLines ? 'border-red-500/50 focus:border-red-500/80 bg-red-900/10' : 'border-white/10 focus:border-blue-500'} rounded-lg p-3 text-xs outline-none transition-all resize-none shadow-inner`}
-                                      value={setupContents[i] ?? (setupFormat === "pullout" ? `請輸入圈選重點說明${i + 1}` : i === 0 ? "我是內文1" : `新增內文${i + 1}`)}
+                                      value={setupContents[i] ?? (setupFormat === "injury" ? `傷勢說明${i + 1}` : setupFormat === "pullout" ? `請輸入圈選重點說明${i + 1}` : i === 0 ? "我是內文1" : `新增內文${i + 1}`)}
                                       onChange={(e) => {
                                         const newVal = e.target.value;
                                         if (isSingleType) {
@@ -4551,6 +4913,29 @@ const App: React.FC = () => {
                                         setSetupContents(newC);
                                       }}
                                     />
+                                    {(setupFormat === "injury" || setupFormat === "pullout") && (
+                                      <div className="flex items-center gap-2 pt-2 border-t border-white/5 mt-2">
+                                        <label className="text-[10px] font-bold text-slate-500 whitespace-nowrap">排版微調</label>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSetupHighlights(prev => prev.map((h, idx) => idx === i ? { ...h, yOffset: (h.yOffset || 0) - 20 } : h));
+                                          }}
+                                          className="flex-1 bg-white/5 hover:bg-white/10 text-white rounded py-1 text-[10px] font-bold transition-colors cursor-pointer"
+                                        >
+                                          ▲ 向上挪
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSetupHighlights(prev => prev.map((h, idx) => idx === i ? { ...h, yOffset: (h.yOffset || 0) + 20 } : h));
+                                          }}
+                                          className="flex-1 bg-white/5 hover:bg-white/10 text-white rounded py-1 text-[10px] font-bold transition-colors cursor-pointer"
+                                        >
+                                          ▼ 向下挪
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               );
@@ -4590,9 +4975,16 @@ const App: React.FC = () => {
                     className="flex items-center justify-between bg-black/30 p-3 rounded-lg border border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
                     onClick={() => setIsHighlighterMode(!isHighlighterMode)}
                   >
-                    <span className="text-[10px] text-slate-400 font-bold tracking-wider flex items-center gap-1.5">
-                      {setupFormat === "pullout" ? "🖌️ 圈選模式" : "📍 標註點位模式"}
-                    </span>
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className="text-[10px] text-slate-400 font-bold tracking-wider flex items-center gap-1.5">
+                        {setupFormat === "pullout" ? "🖌️ 圈選模式" : "📍 標註點位模式"}
+                      </span>
+                      {setupFormat === "injury" && (
+                        <span className="text-[9px] text-slate-500 font-normal mt-0.5 opacity-80">
+                          (關閉時才可使用滑鼠拖曳人物位置)
+                        </span>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setIsHighlighterMode(!isHighlighterMode); }}
@@ -4607,10 +4999,10 @@ const App: React.FC = () => {
                       <label className="text-[10px] text-slate-400 font-bold block">人物旋轉 (Rotation)</label>
                       <div className="bg-black/30 p-4 rounded-lg border border-white/5 space-y-4">
                         <div className="space-y-3">
-                          <input 
-                            type="range" 
-                            min="0" 
-                            max="7" 
+                          <input
+                            type="range"
+                            min="0"
+                            max="7"
                             step="1"
                             className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-red-600 shadow-inner"
                             value={setupInjuryRotationIndex}
@@ -4644,10 +5036,31 @@ const App: React.FC = () => {
                           </div>
                         </div>
                       </div>
+
+                      <label className="text-[10px] text-slate-400 font-bold block pt-2">人物大小縮放 (Scale)</label>
+                      <div className="bg-black/30 p-4 rounded-lg border border-white/5 space-y-4">
+                        <div className="space-y-2">
+                          <input
+                            type="range"
+                            min="100"
+                            max="300"
+                            step="1"
+                            dir="rtl"
+                            className="w-full h-1.5 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                            value={Math.round(setupInjuryTransform.scale * 100)}
+                            onChange={(e) => setSetupInjuryTransform(prev => ({ ...prev, scale: parseInt(e.target.value) / 100 }))}
+                          />
+                          <div className="flex justify-between text-[8px] text-slate-400 font-bold px-0">
+                            <span>放大特寫</span>
+                            <span className="opacity-50">{(setupInjuryTransform.scale).toFixed(1)}x</span>
+                            <span>完整全身(100%)</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   )}
 
-                  {setupFormat === "pullout" && (
+                  {(setupFormat === "pullout" || setupFormat === "injury") && (
                     <>
                       <div className="space-y-3">
                         <label className="text-[10px] text-slate-400 font-bold block">指示線選單</label>
@@ -4678,30 +5091,32 @@ const App: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="space-y-3">
-                        <label className="text-[10px] text-slate-400 font-bold block">螢光筆色彩方案</label>
-                        <div className="flex gap-3 bg-black/30 p-3 rounded-lg border border-white/5">
-                          {(["yellow", "red", "green"] as const).map(c => {
-                            const isActive = highlightColor === c;
-                            const colors = { yellow: "bg-yellow-400", red: "bg-red-400", green: "bg-green-400" };
-                            return (
-                              <button
-                                key={c}
-                                className={`w-8 h-8 rounded-full transition-all border-2 flex shrink-0 items-center justify-center ${isActive ? "border-white scale-110 shadow-[0_0_10px_rgba(255,255,255,0.3)]" : "border-transparent opacity-50 hover:opacity-100 hover:scale-105"}`}
-                                onClick={() => {
-                                  setHighlightColor(c);
-                                  setSetupHighlights(prev => prev.map(h => ({ ...h, color: c })));
+                      {setupFormat !== "injury" && (
+                        <div className="space-y-3">
+                          <label className="text-[10px] text-slate-400 font-bold block">螢光筆色彩方案</label>
+                          <div className="flex gap-3 bg-black/30 p-3 rounded-lg border border-white/5">
+                            {(["yellow", "red", "green"] as const).map(c => {
+                              const isActive = highlightColor === c;
+                              const colors = { yellow: "bg-yellow-400", red: "bg-red-400", green: "bg-green-400" };
+                              return (
+                                <button
+                                  key={c}
+                                  className={`w-8 h-8 rounded-full transition-all border-2 flex shrink-0 items-center justify-center ${isActive ? "border-white scale-110 shadow-[0_0_10px_rgba(255,255,255,0.3)]" : "border-transparent opacity-50 hover:opacity-100 hover:scale-105"}`}
+                                  onClick={() => {
+                                    setHighlightColor(c);
+                                    setSetupHighlights(prev => prev.map(h => ({ ...h, color: c })));
 
-                                  const hexMap = { yellow: "#facc15", red: "#f87171", green: "#4ade80" };
-                                  setAssets(prev => prev.map(a => a.type === 'highlight' ? { ...a, strokeColor: hexMap[c], customBgColor: hexMap[c] } : a));
-                                }}
-                              >
-                                <div className={`w-full h-full rounded-full ${colors[c]}`}></div>
-                              </button>
-                            );
-                          })}
+                                    const hexMap = { yellow: "#facc15", red: "#f87171", green: "#4ade80" };
+                                    setAssets(prev => prev.map(a => a.type === 'highlight' ? { ...a, strokeColor: hexMap[c], customBgColor: hexMap[c] } : a));
+                                  }}
+                                >
+                                  <div className={`w-full h-full rounded-full ${colors[c]}`}></div>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -4832,93 +5247,129 @@ const App: React.FC = () => {
                   style={{ zIndex: 0 }}
                 />
               )}
+
               {previewAssets
                 .filter(asset => asset.type !== 'block' || canvasBgVisible)
-                .map((asset, index) => (
-                  <div
-                    key={asset.id}
-                    data-asset-id={asset.id}
-                    className="absolute flex items-start justify-start pointer-events-none"
-                    style={{
-                      left: `${asset.x}px`,
-                      top: `${asset.y}px`,
-                      width: `${calculateAssetVisualBounds(asset).baseW}px`,
-                      height: `${calculateAssetVisualBounds(asset).baseH}px`,
-                      transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
-                      transformOrigin: "left top",
-                      zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
-                      opacity: asset.opacity,
-                    }}
-                  >
+                .map((asset, index) => {
+                  const isMaskedAsset = asset.id === "img-injury-main" || (asset.type === "highlight" && asset.layoutType === "injury");
+                  const zIndexVal = asset.id.startsWith("title-main") ? 1000 + index : 10 + index;
+                  const innerElement = (
                     <div
-                      className={`relative w-full h-full z-10 transition-transform duration-300 ${asset.type === "image" || asset.type === "highlight" ? "pointer-events-auto cursor-move touch-none" : ""}`}
-                      onMouseDown={(e) => {
-                        if (asset.type === "image" && asset.setupImageIndex !== undefined) {
-                          handleSetupImageInnerMouseDown(e, asset.setupImageIndex, asset);
-                        }
-                        if (asset.type === "highlight") {
-                          handleSetupHighlightMouseDown(e, asset.id);
-                        }
-                      }}
-                      onWheel={(e) => {
-                        if (asset.type === "image" && asset.setupImageIndex !== undefined) {
-                          handleSetupImageInnerWheel(e, asset.setupImageIndex, asset);
-                        }
-                      }}
-                      onTouchStart={(e) => {
-                        if (asset.type === "image" && asset.setupImageIndex !== undefined) {
-                          handleSetupImageInnerTouchStart(e, asset.setupImageIndex, asset, setupPreviewScale);
-                        }
-                        if (asset.type === "highlight") {
-                          handleSetupHighlightTouchStart(e, asset.id);
-                        }
-                      }}
-                      onContextMenu={(e) => {
-                        if (asset.type === "image" && asset.setupImageIndex !== undefined) {
-                          resetSetupImageInnerTransform(e, asset.setupImageIndex);
-                        }
+                      key={asset.id}
+                      data-asset-id={asset.id}
+                      className="absolute flex items-start justify-start pointer-events-none"
+                      style={{
+                        left: asset.id === "img-injury-main" ? `${asset.x + setupInjuryTransform.x}px` : `${asset.x}px`,
+                        top: asset.id === "img-injury-main" ? `${asset.y + setupInjuryTransform.y}px` : `${asset.y}px`,
+                        width: `${calculateAssetVisualBounds(asset).baseW}px`,
+                        height: `${calculateAssetVisualBounds(asset).baseH}px`,
+                        transform: asset.id === "img-injury-main"
+                          ? `scale(${setupInjuryTransform.scale})`
+                          : `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
+                        transformOrigin: "left top",
+                        zIndex: isMaskedAsset ? "auto" : zIndexVal,
+                        opacity: asset.opacity,
                       }}
                     >
-                      <CGPreview
-                        data={asset as any}
-                        mode={asset.type === "title" || asset.type === "block" ? "title" : "content"}
-                        isSelected={false}
-                        hasGlobalBg={!!bgImageUrl && canvasBgVisible}
-                        isExporting={isExporting}
-                      />
-
-                      {asset.type === "highlight" && selectedSetupHighlightId === asset.id && isHighlighterMode && (
-                        <div className="absolute inset-0 ring-2 ring-blue-500 z-50 pointer-events-none">
-                          <button className="absolute -top-6 right-0 bg-red-500 text-white rounded p-1 pointer-events-auto cursor-pointer" onClick={(e) => {
+                      <div
+                        className={`relative w-full h-full z-10 transition-transform duration-300 ${asset.type === "image" || asset.type === "highlight" ? "pointer-events-auto cursor-move touch-none" : (isHighlighterMode && (setupFormat === "injury" || setupFormat === "pullout") && (asset.type === "title" || asset.type === "content")) ? "pointer-events-auto cursor-ns-resize touch-none" : ""}`}
+                        onMouseDown={(e) => {
+                          if (asset.type === "image" && asset.setupImageIndex !== undefined) {
+                            handleSetupImageInnerMouseDown(e, asset.setupImageIndex, asset);
+                          } else if (asset.id === "img-injury-main") {
+                            handleSetupImageInnerMouseDown(e, -1, asset);
+                          }
+                          if (asset.type === "highlight") {
+                            handleSetupHighlightMouseDown(e, asset.id);
+                          }
+                          if (isHighlighterMode && (setupFormat === "injury" || setupFormat === "pullout") && (asset.type === "title" || asset.type === "content")) {
+                            handleSetupTextYOffsetMouseDown(e, asset, setupPreviewScale);
+                          }
+                        }}
+                        onWheel={(e) => {
+                          if (asset.type === "image" && asset.setupImageIndex !== undefined) {
+                            handleSetupImageInnerWheel(e, asset.setupImageIndex, asset);
+                          } else if (asset.id === "img-injury-main") {
+                            handleSetupImageInnerWheel(e, -1, asset);
+                          }
+                        }}
+                        onTouchStart={(e) => {
+                          if (asset.type === "image" && asset.setupImageIndex !== undefined) {
+                            handleSetupImageInnerTouchStart(e, asset.setupImageIndex, asset, setupPreviewScale);
+                          } else if (asset.id === "img-injury-main") {
+                            handleSetupImageInnerTouchStart(e, -1, asset, setupPreviewScale);
+                          }
+                          if (asset.type === "highlight") {
+                            handleSetupHighlightTouchStart(e, asset.id);
+                          }
+                          if (isHighlighterMode && (setupFormat === "injury" || setupFormat === "pullout") && (asset.type === "title" || asset.type === "content")) {
+                            handleSetupTextYOffsetTouchStart(e, asset, setupPreviewScale);
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          if (asset.type === "image" && asset.setupImageIndex !== undefined) {
+                            resetSetupImageInnerTransform(e, asset.setupImageIndex);
+                          } else if (asset.id === "img-injury-main") {
+                            e.preventDefault();
                             e.stopPropagation();
-                            const targetIndex = setupHighlights.findIndex(h => h.id === asset.id);
-                            if (targetIndex !== -1) {
-                              setSetupHighlights(prev => prev.filter(h => h.id !== asset.id));
-                              setSetupTitles(prev => prev.filter((_, idx) => idx !== targetIndex));
-                              setSetupContents(prev => prev.filter((_, idx) => idx !== targetIndex));
-                            }
-                            setSelectedSetupHighlightId(null);
-                          }}>
-                            🗑️
-                          </button>
-                          <div className="absolute top-0 right-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-ne-resize transform translate-x-1/2 -translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'ne', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'ne', asset.id)} />
-                          <div className="absolute bottom-0 right-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-se-resize transform translate-x-1/2 translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'se', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'se', asset.id)} />
-                          <div className="absolute bottom-0 left-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-sw-resize transform -translate-x-1/2 translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'sw', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'sw', asset.id)} />
-                          <div className="absolute top-0 left-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-nw-resize transform -translate-x-1/2 -translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'nw', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'nw', asset.id)} />
-                        </div>
-                      )}
+                            setSetupInjuryTransform({ x: 0, y: 0, scale: 1 });
+                          }
+                        }}
+                      >
+                        <CGPreview
+                          data={asset as any}
+                          mode={asset.type === "title" || asset.type === "block" ? "title" : "content"}
+                          isSelected={false}
+                          hasGlobalBg={!!bgImageUrl && canvasBgVisible}
+                          isExporting={isExporting}
+                        />
+
+                        {!isExporting && asset.type === "highlight" && selectedSetupHighlightId === asset.id && isHighlighterMode && (
+                          <div className="absolute inset-0 ring-2 ring-blue-500 z-50 pointer-events-none">
+                            {setupFormat !== "injury" && (
+                              <button className="absolute -top-6 right-0 bg-red-500 text-white rounded p-1 pointer-events-auto cursor-pointer" onClick={(e) => {
+                                e.stopPropagation();
+                                const targetIndex = setupHighlights.findIndex(h => h.id === asset.id);
+                                if (targetIndex !== -1) {
+                                  setSetupHighlights(prev => prev.filter(h => h.id !== asset.id));
+                                  setSetupTitles(prev => prev.filter((_, idx) => idx !== targetIndex));
+                                  setSetupContents(prev => prev.filter((_, idx) => idx !== targetIndex));
+                                }
+                                setSelectedSetupHighlightId(null);
+                              }}>
+                                🗑️
+                              </button>
+                            )}
+                            <div className="absolute top-0 right-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-ne-resize transform translate-x-1/2 -translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'ne', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'ne', asset.id)} />
+                            <div className="absolute bottom-0 right-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-se-resize transform translate-x-1/2 translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'se', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'se', asset.id)} />
+                            <div className="absolute bottom-0 left-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-sw-resize transform -translate-x-1/2 translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'sw', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'sw', asset.id)} />
+                            <div className="absolute top-0 left-0 w-4 h-4 bg-white/50 border border-blue-500 pointer-events-auto cursor-nw-resize transform -translate-x-1/2 -translate-y-1/2" onMouseDown={e => handleSetupHighlightResizeMouseDown(e, 'nw', asset.id)} onTouchStart={e => handleSetupHighlightResizeTouchStart(e, 'nw', asset.id)} />
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+
+                  if (isMaskedAsset && setupFormat === "injury") {
+                    return (
+                      <div key={`mask-${asset.id}`} className={`absolute pointer-events-none overflow-hidden`} style={{ left: 0, top: '100px', width: '960px', height: '980px', zIndex: zIndexVal }}>
+                        <div className="absolute" style={{ left: 0, top: '-100px', width: '100%', height: '1080px' }}>
+                          {innerElement}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return innerElement;
+                })}
 
               {safetyVisible && <SafetyGuides opacity={0.5} />}
 
               {/* 螢光筆關連指示線層 - Setup Mode */}
-              <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1000]" style={{ overflow: 'visible' }}>
-                {isHighlighterMode && setupFormat !== "injury" && previewAssets.filter(a => a.type === 'highlight').map(h => (
+              <svg className="absolute inset-0 w-full h-full pointer-events-none z-[2000]" style={{ overflow: 'visible' }}>
+                {isHighlighterMode && previewAssets.filter(a => a.type === 'highlight' && a.layoutType !== 'injury').map(h => (
                   <circle key={'dot-' + h.id} cx={h.x + h.baseW * (h.scaleX || 1)} cy={h.y + (h.baseH * (h.scaleY || 1)) / 2} r="4" fill={h.strokeColor || "#ca8a04"} data-uid={h.id} />
                 ))}
-                {setupFormat !== "injury" && getIndicatorPaths(previewAssets, setupFormat === "pullout").map((p: any) => {
+                {getIndicatorPaths(previewAssets, setupFormat === "pullout").map((p: any) => {
                   const hl = previewAssets.find(a => a.id === p.id);
                   const cColor = hl?.strokeColor || "#ca8a04";
                   return (
@@ -4950,19 +5401,25 @@ const App: React.FC = () => {
             </div>
 
             {/* 手機版/全局重置圖片位置按鈕 */}
-            {setupImages.some(img => img.transform && (img.transform.x !== 0 || img.transform.y !== 0 || img.transform.scale !== 1)) && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSetupImages(prev => prev.map(img => ({ ...img, transform: undefined })));
-                }}
-                className="absolute bottom-4 right-4 bg-black/80 hover:bg-black text-white text-[11px] px-3 py-2 rounded-full backdrop-blur-md shadow-2xl border border-white/20 transition-all flex items-center gap-1.5 z-[9000] active:scale-95 cursor-pointer"
-                title="讓所有圖片回到預設位置"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
-                <span>圖片回原位</span>
-              </button>
-            )}
+            {(setupImages.some(img => img.transform && (img.transform.x !== 0 || img.transform.y !== 0 || img.transform.scale !== 1))
+              || (setupFormat === "injury" && (setupInjuryTransform.x !== 0 || setupInjuryTransform.y !== 0 || setupInjuryTransform.scale !== 1 || setupInjuryRotationIndex !== 0))
+            ) && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSetupImages(prev => prev.map(img => ({ ...img, transform: undefined })));
+                    if (setupFormat === "injury") {
+                      setSetupInjuryTransform({ x: 0, y: 0, scale: 1 });
+                      setSetupInjuryRotationIndex(0);
+                    }
+                  }}
+                  className="absolute bottom-4 right-4 bg-black/80 hover:bg-black text-white text-[11px] px-3 py-2 rounded-full backdrop-blur-md shadow-2xl border border-white/20 transition-all flex items-center gap-1.5 z-[9000] active:scale-95 cursor-pointer"
+                  title="讓圖片或人物回到預設位置"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+                  <span>{setupFormat === "injury" ? "人物回到原位" : "圖片回原位"}</span>
+                </button>
+              )}
           </div>
         </div>
       </div>
@@ -5036,6 +5493,19 @@ const App: React.FC = () => {
                 PS News CG Generator
               </span>
             </div>
+            {injuryOverlapWarnings.length > 0 && (
+              <div className="flex items-center px-3 py-1 bg-red-500/20 border border-red-500/50 rounded animate-pulse">
+                <span className="text-[11px] font-bold text-red-400">
+                  ⚠️ 部位 {injuryOverlapWarnings.map(w => `${w.p1} 與 ${w.p2}`).join('、')} 的說明文字已發生交疊，請精簡字數或手動調整位置！
+                </span>
+                <button
+                  onClick={handleAutoFixInjuryOverlap}
+                  className="ml-3 bg-red-600 hover:bg-red-500 text-white text-[10px] px-3 py-1 rounded shadow-sm transition-colors cursor-pointer animate-none active:scale-95"
+                >
+                  自動向下推齊
+                </button>
+              </div>
+            )}
             {/* Toolbar Buttons... continue using existing rest of return */}
 
             <button
@@ -5220,126 +5690,142 @@ const App: React.FC = () => {
                     style={{ zIndex: 0 }}
                   />
                 )}
+
                 {assets.map(
                   (asset, index) =>
-                    asset.visible && (asset.type !== 'block' || canvasBgVisible) && (
-                      <div
-                        key={asset.id}
-                        data-asset-id={asset.id}
-                        className="absolute flex items-start justify-start group/asset"
-                        style={{
-                          left: `${asset.x}px`,
-                          top: `${asset.y}px`,
-                          width: `${calculateAssetVisualBounds(asset).baseW}px`,
-                          height: `${calculateAssetVisualBounds(asset).baseH}px`,
-                          transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
-                          transformOrigin: "left top",
-                          zIndex: asset.id.startsWith("title-main") ? 1000 + index : 10 + index,
-                          opacity: asset.opacity,
-                          overflow: "visible",
-                        }}
-                      >
-                        {asset.type === "image" && (
-                          <div
-                            className="absolute -inset-[5px] border-[5px] border-white/50 opacity-0 hover:opacity-100 z-0 transition-opacity cursor-move"
-                            onMouseDown={(e) => handleAssetMouseDown(e, asset.id)}
-                          />
-                        )}
-
+                    asset.visible && (asset.type !== 'block' || canvasBgVisible) && (() => {
+                      const isMaskedAsset = asset.id === "img-injury-main" || (asset.type === "highlight" && asset.layoutType === "injury");
+                      const zIndexVal = asset.id.startsWith("title-main") ? 1000 + index : 10 + index;
+                      const innerElement = (
                         <div
-                          className={`relative w-full h-full z-10 ${asset.type === "image" ? "touch-none" : ""}`}
-                          onMouseDown={(e) => {
-                            if (asset.type === "image") {
-                              handleImageInnerMouseDown(e, asset.id);
-                            } else {
-                              handleAssetMouseDown(e, asset.id);
-                            }
-                          }}
-                          onWheel={(e) => {
-                            if (asset.type === "image")
-                              handleImageInnerWheel(e, asset.id);
-                          }}
-                          onTouchStart={(e) => {
-                            if (asset.type === "image")
-                              handleImageInnerTouchStart(e, asset.id);
-                          }}
-                          onContextMenu={(e) => {
-                            if (asset.type === "image")
-                              resetImageInnerTransform(e, asset.id);
-                          }}
-                          onDoubleClick={(e) => {
-                            if (asset.type === "image") {
-                              setReplacingAssetId(asset.id);
-                              fileInputRef.current?.click();
-                            }
+                          key={asset.id}
+                          data-asset-id={asset.id}
+                          className="absolute flex items-start justify-start group/asset"
+                          style={{
+                            left: `${asset.x}px`,
+                            top: `${asset.y}px`,
+                            width: `${calculateAssetVisualBounds(asset).baseW}px`,
+                            height: `${calculateAssetVisualBounds(asset).baseH}px`,
+                            transform: `scale(${asset.scaleX || 1}, ${asset.scaleY || 1})`,
+                            transformOrigin: "left top",
+                            zIndex: isMaskedAsset ? "auto" : zIndexVal,
+                            opacity: asset.opacity,
+                            overflow: "visible",
                           }}
                         >
-                          <CGPreview
-                            data={asset as any}
-                            mode={
-                              asset.type === "title"
-                                ? "title"
-                                : asset.type === "block"
-                                  ? "title"
-                                  : "content"
-                            }
-                            isSelected={selectedAssetIds.includes(asset.id)}
-                            hasGlobalBg={!!bgImageUrl && canvasBgVisible}
-                            isExporting={isExporting}
-                          />
-                        </div>
-                        {/* 圖片縮放工具列 */}
-                        {!isExporting && asset.type === "image" && selectedAssetIds.includes(asset.id) && (
+                          {asset.type === "image" && (
+                            <div
+                              className="absolute -inset-[5px] border-[5px] border-white/50 opacity-0 hover:opacity-100 z-0 transition-opacity cursor-move"
+                              onMouseDown={(e) => handleAssetMouseDown(e, asset.id)}
+                            />
+                          )}
+
                           <div
-                            className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/75 backdrop-blur-sm rounded-full px-2 py-1 z-[9500] pointer-events-auto select-none"
-                            onMouseDown={(e) => e.stopPropagation()}
+                            className={`relative w-full h-full z-10 ${asset.type === "image" ? "touch-none" : ""}`}
+                            onMouseDown={(e) => {
+                              if (asset.type === "image") {
+                                handleImageInnerMouseDown(e, asset.id);
+                              } else {
+                                handleAssetMouseDown(e, asset.id);
+                              }
+                            }}
+                            onWheel={(e) => {
+                              if (asset.type === "image")
+                                handleImageInnerWheel(e, asset.id);
+                            }}
+                            onTouchStart={(e) => {
+                              if (asset.type === "image")
+                                handleImageInnerTouchStart(e, asset.id);
+                            }}
+                            onContextMenu={(e) => {
+                              if (asset.type === "image")
+                                resetImageInnerTransform(e, asset.id);
+                            }}
+                            onDoubleClick={(e) => {
+                              if (asset.type === "image") {
+                                setReplacingAssetId(asset.id);
+                                fileInputRef.current?.click();
+                              }
+                            }}
                           >
-                            <button
-                              onClick={(e) => { e.stopPropagation(); zoomImageAsset(asset.id, 0.85); }}
-                              className="text-white w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-full text-base font-bold"
-                              title="縮小"
-                            >−</button>
-                            <span className="text-white/60 text-[10px] px-1">滾輪縮放</span>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); zoomImageAsset(asset.id, 1.15); }}
-                              className="text-white w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-full text-base font-bold"
-                              title="放大"
-                            >+</button>
-                            <div className="w-px h-3 bg-white/30 mx-0.5"></div>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); resetImageInnerTransform(e as any, asset.id); }}
-                              className="text-white w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-full text-base font-bold"
-                              title="重置位置"
+                            <CGPreview
+                              data={asset as any}
+                              mode={
+                                asset.type === "title"
+                                  ? "title"
+                                  : asset.type === "block"
+                                    ? "title"
+                                    : "content"
+                              }
+                              isSelected={selectedAssetIds.includes(asset.id)}
+                              hasGlobalBg={!!bgImageUrl && canvasBgVisible}
+                              isExporting={isExporting}
+                            />
+                          </div>
+                          {/* 圖片縮放工具列 */}
+                          {!isExporting && asset.type === "image" && selectedAssetIds.includes(asset.id) && (
+                            <div
+                              className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-black/75 backdrop-blur-sm rounded-full px-2 py-1 z-[9500] pointer-events-auto select-none"
+                              onMouseDown={(e) => e.stopPropagation()}
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
-                            </button>
-                          </div>
-                        )}
-                        {/* 座標標示 (僅在預覽時顯示，不導出) */}
-                        {!isExporting && (
-                          <div className="absolute -top-7 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-sm backdrop-blur-md shadow-lg pointer-events-none select-none z-[100] border border-white/20 flex flex-col items-start gap-0.5 min-w-[60px]">
-                            <div className="font-bold border-b border-white/20 w-full pb-0.5 mb-0.5 opacity-80">{asset.name || asset.id}</div>
-                            <div className="flex gap-2">
-                              <span>X: <span className="text-yellow-400">{Math.round(asset.x)}</span></span>
-                              <span>Y: <span className="text-yellow-400">{Math.round(asset.y)}</span></span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); zoomImageAsset(asset.id, 0.85); }}
+                                className="text-white w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-full text-base font-bold"
+                                title="縮小"
+                              >−</button>
+                              <span className="text-white/60 text-[10px] px-1">滾輪縮放</span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); zoomImageAsset(asset.id, 1.15); }}
+                                className="text-white w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-full text-base font-bold"
+                                title="放大"
+                              >+</button>
+                              <div className="w-px h-3 bg-white/30 mx-0.5"></div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); resetImageInnerTransform(e as any, asset.id); }}
+                                className="text-white w-6 h-6 flex items-center justify-center hover:bg-white/20 rounded-full text-base font-bold"
+                                title="重置位置"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>
+                              </button>
                             </div>
-                            {asset.type === "image" && (
-                              <div className="text-[9px] text-white/60">
-                                W/H: {Math.round(calculateAssetVisualBounds(asset).baseW * asset.scaleX)} x {Math.round(calculateAssetVisualBounds(asset).baseH * asset.scaleY)}
+                          )}
+                          {/* 座標標示 (僅在預覽時顯示，不導出) */}
+                          {!isExporting && (
+                            <div className="absolute -top-7 left-0 bg-black/70 text-white text-[10px] px-1.5 py-0.5 rounded-sm backdrop-blur-md shadow-lg pointer-events-none select-none z-[100] border border-white/20 flex flex-col items-start gap-0.5 min-w-[60px]">
+                              <div className="font-bold border-b border-white/20 w-full pb-0.5 mb-0.5 opacity-80">{asset.name || asset.id}</div>
+                              <div className="flex gap-2">
+                                <span>X: <span className="text-yellow-400">{Math.round(asset.x)}</span></span>
+                                <span>Y: <span className="text-yellow-400">{Math.round(asset.y)}</span></span>
                               </div>
-                            )}
+                              {asset.type === "image" && (
+                                <div className="text-[9px] text-white/60">
+                                  W/H: {Math.round(calculateAssetVisualBounds(asset).baseW * asset.scaleX)} x {Math.round(calculateAssetVisualBounds(asset).baseH * asset.scaleY)}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+
+                      if (isMaskedAsset && setupFormat === "injury") {
+                        return (
+                          <div key={`mask-${asset.id}`} data-mask-id={asset.id} className={`absolute overflow-hidden`} style={{ left: 0, top: '100px', width: '960px', height: '980px', zIndex: zIndexVal, pointerEvents: isExporting ? 'none' : 'auto' }}>
+                            <div className="absolute" style={{ left: 0, top: '-100px', width: '100%', height: '1080px' }}>
+                              {innerElement}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    ),
+                        );
+                      }
+                      return innerElement;
+                    })()
                 )}
 
                 {/* 螢光筆關連指示線層 (SVG) */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1000]" style={{ overflow: 'visible' }}>
-                  {!isExporting && isHighlighterMode && setupFormat !== "injury" && assets.filter(a => a.type === 'highlight').map(h => (
+                <svg className="absolute inset-0 w-full h-full pointer-events-none z-[2000]" style={{ overflow: 'visible' }}>
+                  {!isExporting && isHighlighterMode && assets.filter(a => a.type === 'highlight' && a.layoutType !== 'injury').map(h => (
                     <circle key={'dot-' + h.id} cx={h.x + h.baseW * h.scaleX} cy={h.y + (h.baseH * h.scaleY) / 2} r="4" fill="#facc15" data-uid={h.id} />
                   ))}
-                  {setupFormat !== "injury" && getIndicatorPaths(assets).map((p: any) => {
+                  {getIndicatorPaths(assets).map((p: any) => {
                     const hl = assets.find(a => a.id === p.id);
                     const cColor = hl?.strokeColor || "#facc15";
                     return (
@@ -5454,317 +5940,331 @@ const App: React.FC = () => {
             )}
 
             <aside className="w-[340px] bg-[#1a1a1a] border-l border-black flex flex-col z-[100] shrink-0 overflow-y-auto custom-scrollbar">
-              <div className="p-6 space-y-8">
-                {firstSelectedAsset ? (
-                  <div className="space-y-6">
-                    {selectedAssetIds.length >= 2 && (
-                      <div className="space-y-4 pb-6 border-b border-white/5">
-                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-                          對齊工具 (Align)
+              {setupFormat === "injury" ? (
+                <InjuryMapSidebar
+                  title={setupInjuryTitle}
+                  setTitle={setSetupInjuryTitle}
+                  rotationIndex={setupInjuryRotationIndex}
+                  setRotationIndex={setSetupInjuryRotationIndex}
+
+                  scale={Math.round(setupInjuryTransform.scale * 100)}
+                  setScale={(s) => setSetupInjuryTransform(prev => ({ ...prev, scale: s / 100 }))}
+                />
+              ) : (
+                <>
+                  <div className="p-6 space-y-8">
+                    {firstSelectedAsset ? (
+                      <div className="space-y-6">
+                        {selectedAssetIds.length >= 2 && (
+                          <div className="space-y-4 pb-6 border-b border-white/5">
+                            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+                              對齊工具 (Align)
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              <AlignButton
+                                onClick={() => alignSelectedAssets("left")}
+                                label="置左"
+                              />
+                              <AlignButton
+                                onClick={() => alignSelectedAssets("h-center")}
+                                label="居中"
+                              />
+                              <AlignButton
+                                onClick={() => alignSelectedAssets("right")}
+                                label="置右"
+                              />
+                              <AlignButton
+                                onClick={() => alignSelectedAssets("h-dist")}
+                                label="均分"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="space-y-4 pt-4 border-t border-white/5">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                            視覺主題 (Theme)
+                          </div>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {(Object.keys(THEMES) as CGTheme[]).map((t) => (
+                              <button
+                                key={t}
+                                onClick={() => updateSelectedAssets({ theme: t })}
+                                className={`h-8 rounded-sm border transition-all ${firstSelectedAsset.theme === t ? "border-blue-500 ring-1 ring-blue-500" : "border-white/10 bg-white/5"}`}
+                              >
+                                <div
+                                  className={`w-full h-full bg-gradient-to-br ${THEMES[t].primary}`}
+                                />
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-4 gap-1.5">
-                          <AlignButton
-                            onClick={() => alignSelectedAssets("left")}
-                            label="置左"
-                          />
-                          <AlignButton
-                            onClick={() => alignSelectedAssets("h-center")}
-                            label="居中"
-                          />
-                          <AlignButton
-                            onClick={() => alignSelectedAssets("right")}
-                            label="置右"
-                          />
-                          <AlignButton
-                            onClick={() => alignSelectedAssets("h-dist")}
-                            label="均分"
-                          />
-                        </div>
-                      </div>
-                    )}
 
-                    <div className="space-y-4 pt-4 border-t border-white/5">
-                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                        視覺主題 (Theme)
-                      </div>
-                      <div className="grid grid-cols-5 gap-1.5">
-                        {(Object.keys(THEMES) as CGTheme[]).map((t) => (
-                          <button
-                            key={t}
-                            onClick={() => updateSelectedAssets({ theme: t })}
-                            className={`h-8 rounded-sm border transition-all ${firstSelectedAsset.theme === t ? "border-blue-500 ring-1 ring-blue-500" : "border-white/10 bg-white/5"}`}
-                          >
-                            <div
-                              className={`w-full h-full bg-gradient-to-br ${THEMES[t].primary}`}
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                        {(firstSelectedAsset.type === "title" ||
+                          firstSelectedAsset.type === "content" ||
+                          firstSelectedAsset.type === "stamp") && (
+                            <div className="space-y-4">
+                              <PropertySlider
+                                label="文字大小"
+                                value={firstSelectedAsset.size}
+                                min={12}
+                                max={300}
+                                unit="px"
+                                onChange={(v) => updateSelectedAssets({ size: v })}
+                              />
+                              <textarea
+                                className="w-full bg-[#0a0a0a] border border-white/5 rounded px-3 py-2 text-[12px] h-32 outline-none text-slate-100"
+                                value={
+                                  firstSelectedAsset.text ||
+                                  firstSelectedAsset.items?.join("\n")
+                                }
+                                onChange={(e) =>
+                                  handleContentTextChange(
+                                    firstSelectedAsset.id,
+                                    e.target.value,
+                                  )
+                                }
+                              />
+                            </div>
+                          )}
 
-                    {(firstSelectedAsset.type === "title" ||
-                      firstSelectedAsset.type === "content" ||
-                      firstSelectedAsset.type === "stamp") && (
-                        <div className="space-y-4">
-                          <PropertySlider
-                            label="文字大小"
-                            value={firstSelectedAsset.size}
-                            min={12}
-                            max={300}
-                            unit="px"
-                            onChange={(v) => updateSelectedAssets({ size: v })}
-                          />
-                          <textarea
-                            className="w-full bg-[#0a0a0a] border border-white/5 rounded px-3 py-2 text-[12px] h-32 outline-none text-slate-100"
-                            value={
-                              firstSelectedAsset.text ||
-                              firstSelectedAsset.items?.join("\n")
-                            }
-                            onChange={(e) =>
-                              handleContentTextChange(
-                                firstSelectedAsset.id,
-                                e.target.value,
-                              )
-                            }
-                          />
-                        </div>
-                      )}
-
-                    {firstSelectedAsset.type === "image" && (
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={() => {
-                            setReplacingAssetId(firstSelectedAsset.id);
-                            fileInputRef.current?.click();
-                          }}
-                          className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-blue-400"
-                        >
-                          重新挑選圖片 (Replace)
-                        </button>
-                        <button
-                          onClick={startPulloutSelection}
-                          className="w-full py-2 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-orange-400"
-                        >
-                          區域拉字 (Pull-out Zoom)
-                        </button>
-                      </div>
-                    )}
-
-                    {firstSelectedAsset.type === "stamp" && (
-                      <div className="space-y-4 pt-4 border-t border-white/5">
-                        <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                          印章形狀 (Shape)
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() =>
-                              updateSelectedAssets({ stampShape: "explosion" })
-                            }
-                            className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "explosion" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
-                          >
-                            爆炸 (Explosion)
-                          </button>
-                          <button
-                            onClick={() =>
-                              updateSelectedAssets({ stampShape: "box" })
-                            }
-                            className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "box" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
-                          >
-                            方框 (Box)
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    <PropertySlider
-                      label="整體透明度"
-                      value={firstSelectedAsset.opacity * 100}
-                      min={0}
-                      max={100}
-                      unit="%"
-                      onChange={(v) => updateSelectedAssets({ opacity: v / 100 })}
-                    />
-                  </div>
-                ) : (
-                  <div className="py-24 text-center opacity-30 text-[9px] font-black uppercase tracking-widest">
-                    選取圖層
-                  </div>
-                )}
-              </div>
-              <div className="mt-auto flex flex-col bg-[#141414] border-t border-black min-h-[300px]">
-                <div className="h-9 flex items-center px-4 bg-[#1a1a1a] text-[9px] font-black text-slate-500 border-b border-black uppercase tracking-widest">
-                  圖層管理 (Layers)
-                </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar pb-20">
-                  {(() => {
-                    const renderedGroups = new Set<string>();
-                    const reversedAssets = [...assets].reverse();
-                    return reversedAssets.map((a) => {
-                      if (a.groupId) {
-                        if (renderedGroups.has(a.groupId)) return null;
-                        renderedGroups.add(a.groupId);
-
-                        const groupAssets = assets.filter(
-                          (item) => item.groupId === a.groupId,
-                        );
-                        const isCollapsed = collapsedGroups.includes(a.groupId);
-                        const groupTitle = a.groupId.split("-")[0] || "群組";
-                        const isGroupSelected = groupAssets.every((ga) =>
-                          selectedAssetIds.includes(ga.id),
-                        );
-                        const isAnyGroupSelected = groupAssets.some((ga) =>
-                          selectedAssetIds.includes(ga.id),
-                        );
-
-                        return (
-                          <div key={a.groupId} className="border-b border-black/10">
-                            <div
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const groupIds = groupAssets.map((ga) => ga.id);
-                                setSelectedAssetIds(groupIds);
-                                setLastClickedId(groupIds[0]);
+                        {firstSelectedAsset.type === "image" && (
+                          <div className="flex flex-col gap-2">
+                            <button
+                              onClick={() => {
+                                setReplacingAssetId(firstSelectedAsset.id);
+                                fileInputRef.current?.click();
                               }}
-                              className={`h-11 flex items-center px-4 cursor-pointer group/folder transition-colors ${isAnyGroupSelected ? "bg-blue-600/10" : "hover:bg-white/5"}`}
+                              className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-blue-400"
+                            >
+                              重新挑選圖片 (Replace)
+                            </button>
+                            <button
+                              onClick={startPulloutSelection}
+                              className="w-full py-2 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 rounded-sm text-[9px] font-black uppercase tracking-widest text-orange-400"
+                            >
+                              區域拉字 (Pull-out Zoom)
+                            </button>
+                          </div>
+                        )}
+
+                        {firstSelectedAsset.type === "stamp" && (
+                          <div className="space-y-4 pt-4 border-t border-white/5">
+                            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              印章形狀 (Shape)
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() =>
+                                  updateSelectedAssets({ stampShape: "explosion" })
+                                }
+                                className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "explosion" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
+                              >
+                                爆炸 (Explosion)
+                              </button>
+                              <button
+                                onClick={() =>
+                                  updateSelectedAssets({ stampShape: "box" })
+                                }
+                                className={`flex-1 py-2 rounded-sm text-[10px] uppercase font-bold ${firstSelectedAsset.stampShape === "box" ? "bg-blue-600 text-white" : "bg-white/5 text-slate-500"}`}
+                              >
+                                方框 (Box)
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <PropertySlider
+                          label="整體透明度"
+                          value={firstSelectedAsset.opacity * 100}
+                          min={0}
+                          max={100}
+                          unit="%"
+                          onChange={(v) => updateSelectedAssets({ opacity: v / 100 })}
+                        />
+                      </div>
+                    ) : (
+                      <div className="py-24 text-center opacity-30 text-[9px] font-black uppercase tracking-widest">
+                        選取圖層
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-auto flex flex-col bg-[#141414] border-t border-black min-h-[300px]">
+                    <div className="h-9 flex items-center px-4 bg-[#1a1a1a] text-[9px] font-black text-slate-500 border-b border-black uppercase tracking-widest">
+                      圖層管理 (Layers)
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pb-20">
+                      {(() => {
+                        const renderedGroups = new Set<string>();
+                        const reversedAssets = [...assets].reverse();
+                        return reversedAssets.map((a) => {
+                          if (a.groupId) {
+                            if (renderedGroups.has(a.groupId)) return null;
+                            renderedGroups.add(a.groupId);
+
+                            const groupAssets = assets.filter(
+                              (item) => item.groupId === a.groupId,
+                            );
+                            const isCollapsed = collapsedGroups.includes(a.groupId);
+                            const groupTitle = a.groupId.split("-")[0] || "群組";
+                            const isGroupSelected = groupAssets.every((ga) =>
+                              selectedAssetIds.includes(ga.id),
+                            );
+                            const isAnyGroupSelected = groupAssets.some((ga) =>
+                              selectedAssetIds.includes(ga.id),
+                            );
+
+                            return (
+                              <div key={a.groupId} className="border-b border-black/10">
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const groupIds = groupAssets.map((ga) => ga.id);
+                                    setSelectedAssetIds(groupIds);
+                                    setLastClickedId(groupIds[0]);
+                                  }}
+                                  className={`h-11 flex items-center px-4 cursor-pointer group/folder transition-colors ${isAnyGroupSelected ? "bg-blue-600/10" : "hover:bg-white/5"}`}
+                                >
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCollapsedGroups((prev) =>
+                                        isCollapsed
+                                          ? prev.filter((id) => id !== a.groupId)
+                                          : [...prev, a.groupId],
+                                      );
+                                    }}
+                                    className="mr-3 text-[10px] w-4 h-4 flex items-center justify-center opacity-40 hover:opacity-100 transition-transform duration-200"
+                                    style={{
+                                      transform: isCollapsed
+                                        ? "rotate(-90deg)"
+                                        : "none",
+                                    }}
+                                  >
+                                    ▼
+                                  </button>
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                    <span className="text-yellow-600">📁</span>{" "}
+                                    {groupTitle}
+                                  </span>
+                                  <div className="ml-auto flex items-center gap-2 opacity-0 group-hover/folder:opacity-100">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const isAllVisible = groupAssets.every(
+                                          (ga) => ga.visible,
+                                        );
+                                        groupAssets.forEach((ga) =>
+                                          updateAsset(ga.id, {
+                                            visible: !isAllVisible,
+                                          }),
+                                        );
+                                      }}
+                                      className="text-xs opacity-60 hover:opacity-100"
+                                      title="群組顯示/隱藏"
+                                    >
+                                      {groupAssets.every((ga) => ga.visible)
+                                        ? "👁️"
+                                        : "🕶️"}
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        pushToHistory(assets);
+                                        setAssets((prev) =>
+                                          prev.filter(
+                                            (item) => item.groupId !== a.groupId,
+                                          ),
+                                        );
+                                        setSelectedAssetIds([]);
+                                      }}
+                                      className="text-[10px] text-slate-600 hover:text-red-500"
+                                      title="刪除群組"
+                                    >
+                                      🗑️
+                                    </button>
+                                  </div>
+                                </div>
+                                {!isCollapsed && (
+                                  <div className="bg-black/30">
+                                    {groupAssets
+                                      .slice()
+                                      .reverse()
+                                      .map((ga) => (
+                                        <div
+                                          key={ga.id}
+                                          onClick={(e) => handleLayerClick(ga.id, e)}
+                                          className={`h-10 flex items-center pl-10 pr-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(ga.id) ? "bg-blue-600/20 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
+                                        >
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              updateAsset(ga.id, {
+                                                visible: !ga.visible,
+                                              });
+                                            }}
+                                            className={`mr-4 text-xs ${ga.visible ? "opacity-60" : "opacity-20"}`}
+                                          >
+                                            {ga.visible ? "👁️" : "🕶️"}
+                                          </button>
+                                          <span className="text-[9px] font-bold text-slate-500 truncate uppercase tracking-tight">
+                                            {ga.name}
+                                          </span>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setSelectedAssetIds([ga.id]);
+                                              deleteSelected();
+                                            }}
+                                            className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
+                                          >
+                                            🗑️
+                                          </button>
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div
+                              key={a.id}
+                              onClick={(e) => handleLayerClick(a.id, e)}
+                              className={`h-11 flex items-center px-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(a.id) ? "bg-blue-600/15 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
                             >
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setCollapsedGroups((prev) =>
-                                    isCollapsed
-                                      ? prev.filter((id) => id !== a.groupId)
-                                      : [...prev, a.groupId],
-                                  );
+                                  updateAsset(a.id, { visible: !a.visible });
                                 }}
-                                className="mr-3 text-[10px] w-4 h-4 flex items-center justify-center opacity-40 hover:opacity-100 transition-transform duration-200"
-                                style={{
-                                  transform: isCollapsed
-                                    ? "rotate(-90deg)"
-                                    : "none",
-                                }}
+                                className={`mr-4 text-xs ${a.visible ? "opacity-60" : "opacity-20"}`}
                               >
-                                ▼
+                                {a.visible ? "👁️" : "🕶️"}
                               </button>
-                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                                <span className="text-yellow-600">📁</span>{" "}
-                                {groupTitle}
+                              <span className="text-[10px] font-bold text-slate-400 truncate uppercase tracking-tight">
+                                {a.name}
                               </span>
-                              <div className="ml-auto flex items-center gap-2 opacity-0 group-hover/folder:opacity-100">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const isAllVisible = groupAssets.every(
-                                      (ga) => ga.visible,
-                                    );
-                                    groupAssets.forEach((ga) =>
-                                      updateAsset(ga.id, {
-                                        visible: !isAllVisible,
-                                      }),
-                                    );
-                                  }}
-                                  className="text-xs opacity-60 hover:opacity-100"
-                                  title="群組顯示/隱藏"
-                                >
-                                  {groupAssets.every((ga) => ga.visible)
-                                    ? "👁️"
-                                    : "🕶️"}
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    pushToHistory(assets);
-                                    setAssets((prev) =>
-                                      prev.filter(
-                                        (item) => item.groupId !== a.groupId,
-                                      ),
-                                    );
-                                    setSelectedAssetIds([]);
-                                  }}
-                                  className="text-[10px] text-slate-600 hover:text-red-500"
-                                  title="刪除群組"
-                                >
-                                  🗑️
-                                </button>
-                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedAssetIds([a.id]);
+                                  deleteSelected();
+                                }}
+                                className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
+                              >
+                                🗑️
+                              </button>
                             </div>
-                            {!isCollapsed && (
-                              <div className="bg-black/30">
-                                {groupAssets
-                                  .slice()
-                                  .reverse()
-                                  .map((ga) => (
-                                    <div
-                                      key={ga.id}
-                                      onClick={(e) => handleLayerClick(ga.id, e)}
-                                      className={`h-10 flex items-center pl-10 pr-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(ga.id) ? "bg-blue-600/20 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
-                                    >
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          updateAsset(ga.id, {
-                                            visible: !ga.visible,
-                                          });
-                                        }}
-                                        className={`mr-4 text-xs ${ga.visible ? "opacity-60" : "opacity-20"}`}
-                                      >
-                                        {ga.visible ? "👁️" : "🕶️"}
-                                      </button>
-                                      <span className="text-[9px] font-bold text-slate-500 truncate uppercase tracking-tight">
-                                        {ga.name}
-                                      </span>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedAssetIds([ga.id]);
-                                          deleteSelected();
-                                        }}
-                                        className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
-                                      >
-                                        🗑️
-                                      </button>
-                                    </div>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div
-                          key={a.id}
-                          onClick={(e) => handleLayerClick(a.id, e)}
-                          className={`h-11 flex items-center px-4 border-b border-black/10 cursor-pointer group transition-colors ${selectedAssetIds.includes(a.id) ? "bg-blue-600/15 border-l-2 border-l-blue-500" : "hover:bg-white/5"}`}
-                        >
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              updateAsset(a.id, { visible: !a.visible });
-                            }}
-                            className={`mr-4 text-xs ${a.visible ? "opacity-60" : "opacity-20"}`}
-                          >
-                            {a.visible ? "👁️" : "🕶️"}
-                          </button>
-                          <span className="text-[10px] font-bold text-slate-400 truncate uppercase tracking-tight">
-                            {a.name}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedAssetIds([a.id]);
-                              deleteSelected();
-                            }}
-                            className="ml-auto opacity-0 group-hover:opacity-100 text-[10px] text-slate-600 hover:text-red-500"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                </>
+              )}
             </aside>
           </div>
         </div>
