@@ -4702,7 +4702,7 @@ const App: React.FC = () => {
             <div className={`space-y-6 ${(setupFormat === "pullout" || setupFormat === "injury") ? "min-w-0" : ""}`}>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-blue-600 flex items-center justify-center text-xs">3</span>
-                文字內容輸入
+                {setupFormat === "injury" ? "傷勢部位輸入" : "文字內容輸入"}
               </h2>
 
               {!setupFormat ? (
@@ -4711,6 +4711,54 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {/* 傷勢圖：標注 / 拖曳模式切換 */}
+                  {setupFormat === "injury" && (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsHighlighterMode(!isHighlighterMode)}
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border font-bold text-sm transition-all ${isHighlighterMode ? "bg-blue-600/20 border-blue-500/60 text-blue-300 hover:bg-blue-600/30" : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"}`}
+                      >
+                        <span className="flex items-center gap-2">
+                          {isHighlighterMode ? "📍 標注模式" : "🖐️ 拖曳模式"}
+                        </span>
+                        <span className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${isHighlighterMode ? "bg-blue-600" : "bg-slate-600"}`}>
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isHighlighterMode ? "translate-x-4" : "translate-x-0.5"}`} />
+                        </span>
+                      </button>
+                      <div className={`text-[10px] font-bold px-3 py-2 rounded-lg border flex items-center gap-2 transition-all ${isHighlighterMode ? "bg-blue-500/10 text-blue-300 border-blue-500/30" : "bg-white/5 text-slate-400 border-white/10"}`}>
+                        {isHighlighterMode ? "📍 標注模式開啟：點擊右側人物圖加入部位標記" : "🖐️ 拖曳模式：可拖曳右側人物調整位置"}
+                      </div>
+                      {/* 指示線設定 */}
+                      <div className="flex flex-col gap-2 bg-black/20 p-3 rounded-lg border border-white/5">
+                        <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">指示線樣式</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] text-slate-500 whitespace-nowrap">粗細</span>
+                          <input
+                            type="range" min="1" max="10"
+                            value={pulloutLineThickness}
+                            onChange={e => setPulloutLineThickness(Number(e.target.value))}
+                            className="flex-1 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                          />
+                          <span className="text-[10px] text-white font-bold w-4 text-center">{pulloutLineThickness}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] text-slate-500 whitespace-nowrap">樣式</span>
+                          <div className="flex gap-2">
+                            <button
+                              className={`px-3 py-1.5 text-[10px] rounded transition-colors ${pulloutLineStyle === "dashed" ? "bg-blue-600 text-white font-bold shadow-md" : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"}`}
+                              onClick={() => setPulloutLineStyle("dashed")}
+                            >虛線</button>
+                            <button
+                              className={`px-3 py-1.5 text-[10px] rounded transition-colors ${pulloutLineStyle === "solid" ? "bg-blue-600 text-white font-bold shadow-md" : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"}`}
+                              onClick={() => setPulloutLineStyle("solid")}
+                            >實線</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* 大標題 */}
                   {setupFormat !== "injury" && (
                     <div className="space-y-1.5">
@@ -4881,7 +4929,8 @@ const App: React.FC = () => {
                                 <div key={(setupFormat === "pullout" || setupFormat === "injury") ? itemOrTitle.id : i} className="space-y-3 p-4 bg-white/5 rounded-xl border border-white/5 relative group/item">
                                   {((setupFormat === "profile" && setupTitles.length > 1) || setupFormat === "pullout" || setupFormat === "injury") && (
                                     <button
-                                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full text-white text-[10px] opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center hover:bg-red-700 shadow-lg z-10"
+                                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-900/60 hover:bg-red-600 rounded-full text-white text-[10px] flex items-center justify-center transition-colors shadow z-10"
+                                      title="刪除點位"
                                       onClick={() => {
                                         if (setupFormat === "pullout" || setupFormat === "injury") {
                                           setSetupHighlights(prev => prev.filter((_, idx) => idx !== i));
@@ -4889,7 +4938,7 @@ const App: React.FC = () => {
                                         setSetupTitles(prev => prev.filter((_, idx) => idx !== i));
                                         setSetupContents(prev => prev.filter((_, idx) => idx !== i));
                                       }}
-                                    >✕</button>
+                                    >🗑</button>
                                   )}
                                   <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{setupFormat === "injury" ? "部位" : setupFormat === "pullout" ? "螢光標題" : "小標題"} {setupFormat === "profile" || setupFormat === "pullout" || setupFormat === "injury" ? i + 1 : ""}</label>
@@ -4988,70 +5037,47 @@ const App: React.FC = () => {
                     {setupFormat === "pullout" ? "文章拉字專屬設定" : "傷勢圖專屬設定"}
                   </label>
 
-                  {/* 共同：圈選/點位模式 */}
-                  <div
-                    className="flex items-center justify-between bg-black/30 p-3 rounded-lg border border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
-                    onClick={() => setIsHighlighterMode(!isHighlighterMode)}
-                  >
-                    <div className="flex flex-col items-start gap-0.5">
-                      <span className="text-[10px] text-slate-400 font-bold tracking-wider flex items-center gap-1.5">
-                        {setupFormat === "pullout" ? "🖌️ 圈選模式" : "📍 標註點位模式"}
-                      </span>
-                      {setupFormat === "injury" && (
-                        <span className="text-[9px] text-slate-500 font-normal mt-0.5 opacity-80">
-                          (關閉時才可使用滑鼠拖曳人物位置)
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setIsHighlighterMode(!isHighlighterMode); }}
-                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${isHighlighterMode ? "bg-blue-600" : "bg-slate-600"}`}
+                  {/* 文章拉字：圈選模式 toggle（傷勢圖的 toggle 已移至左欄）*/}
+                  {setupFormat === "pullout" && (
+                    <div
+                      className="flex items-center justify-between bg-black/30 p-3 rounded-lg border border-white/5 cursor-pointer hover:bg-white/5 transition-colors"
+                      onClick={() => setIsHighlighterMode(!isHighlighterMode)}
                     >
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isHighlighterMode ? "translate-x-3.5" : "translate-x-0.5"}`} />
-                    </button>
-                  </div>
+                      <span className="text-[10px] text-slate-400 font-bold tracking-wider flex items-center gap-1.5">
+                        🖌️ 圈選模式
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setIsHighlighterMode(!isHighlighterMode); }}
+                        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${isHighlighterMode ? "bg-blue-600" : "bg-slate-600"}`}
+                      >
+                        <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${isHighlighterMode ? "translate-x-3.5" : "translate-x-0.5"}`} />
+                      </button>
+                    </div>
+                  )}
 
                   {setupFormat === "injury" && (
                     <div className="space-y-3">
                       <label className="text-[10px] text-slate-400 font-bold block">人物旋轉 (Rotation)</label>
-                      <div className="bg-black/30 p-4 rounded-lg border border-white/5 space-y-4">
-                        <div className="space-y-3">
-                          <input
-                            type="range"
-                            min="0"
-                            max="7"
-                            step="1"
-                            className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-red-600 shadow-inner"
-                            value={setupInjuryRotationIndex}
-                            onChange={(e) => setSetupInjuryRotationIndex(parseInt(e.target.value))}
-                          />
-                          <div className="grid grid-cols-8 text-[8px] text-slate-500 font-bold text-center gap-0">
-                            {["正面", "45°", "右側", "135°", "背面", "225°", "左側", "315°"].map((lbl, idx) => (
-                              <span key={idx} className={setupInjuryRotationIndex === idx ? "text-red-500" : ""}>{lbl}</span>
-                            ))}
-                          </div>
+                      <div className="bg-black/30 p-4 rounded-lg border border-white/5 space-y-3">
+                        <input
+                          type="range"
+                          min="0"
+                          max="7"
+                          step="1"
+                          className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-red-600 shadow-inner"
+                          value={setupInjuryRotationIndex}
+                          onChange={(e) => setSetupInjuryRotationIndex(parseInt(e.target.value))}
+                        />
+                        <div className="grid grid-cols-8 text-[8px] text-slate-500 font-bold text-center gap-0">
+                          {["正面", "45°", "右側", "135°", "背面", "225°", "左側", "315°"].map((lbl, idx) => (
+                            <span key={idx} className={setupInjuryRotationIndex === idx ? "text-red-500" : ""}>{lbl}</span>
+                          ))}
                         </div>
-
-                        <div className="pt-2 border-t border-white/5 flex items-center justify-between">
-                          <div className="flex flex-col">
-                            <span className="text-[10px] text-white font-bold opacity-80">
-                              {
-                                ["正面 (0°)", "右斜 45°", "右側 (90°)", "右斜背 135°", "背面 (180°)", "左斜背 225°", "左側 (270°)", "左斜 315°"][setupInjuryRotationIndex]
-                              }
-                            </span>
-                            <span className="text-[8px] text-slate-500 font-medium whitespace-nowrap">Fine-tuning supported</span>
-                          </div>
-                          <div className="flex gap-1">
-                            <button
-                              className="bg-white/5 hover:bg-white/10 w-8 h-8 flex items-center justify-center rounded-lg border border-white/10 transition-colors text-xs"
-                              onClick={() => setSetupInjuryRotationIndex(prev => (prev + 7) % 8)}
-                            >◀</button>
-                            <button
-                              className="bg-white/5 hover:bg-white/10 w-8 h-8 flex items-center justify-center rounded-lg border border-white/10 transition-colors text-xs"
-                              onClick={() => setSetupInjuryRotationIndex(prev => (prev + 1) % 8)}
-                            >▶</button>
-                          </div>
+                        <div className="text-center">
+                          <span className="text-[10px] text-white font-bold opacity-80">
+                            {["正面 (0°)", "右斜 45°", "右側 (90°)", "右斜背 135°", "背面 (180°)", "左斜背 225°", "左側 (270°)", "左斜 315°"][setupInjuryRotationIndex]}
+                          </span>
                         </div>
                       </div>
 
@@ -5063,22 +5089,21 @@ const App: React.FC = () => {
                             min="100"
                             max="300"
                             step="1"
-                            dir="rtl"
                             className="w-full h-1.5 bg-slate-700/50 rounded-lg appearance-none cursor-pointer accent-blue-500"
                             value={Math.round(setupInjuryTransform.scale * 100)}
                             onChange={(e) => setSetupInjuryTransform(prev => ({ ...prev, scale: parseInt(e.target.value) / 100 }))}
                           />
                           <div className="flex justify-between text-[8px] text-slate-400 font-bold px-0">
-                            <span>放大特寫</span>
-                            <span className="opacity-50">{(setupInjuryTransform.scale).toFixed(1)}x</span>
                             <span>完整全身(100%)</span>
+                            <span className="opacity-50">{(setupInjuryTransform.scale).toFixed(1)}x</span>
+                            <span>放大特寫</span>
                           </div>
                         </div>
                       </div>
                     </div>
                   )}
 
-                  {(setupFormat === "pullout" || setupFormat === "injury") && (
+                  {setupFormat === "pullout" && (
                     <>
                       <div className="space-y-3">
                         <label className="text-[10px] text-slate-400 font-bold block">指示線選單</label>
@@ -5290,7 +5315,7 @@ const App: React.FC = () => {
                       }}
                     >
                       <div
-                        className={`relative w-full h-full z-10 transition-transform duration-300 ${asset.type === "image" || asset.type === "highlight" ? "pointer-events-auto cursor-move touch-none" : (isHighlighterMode && (setupFormat === "injury" || setupFormat === "pullout") && (asset.type === "title" || asset.type === "content")) ? "pointer-events-auto cursor-ns-resize touch-none" : ""}`}
+                        className={`relative w-full h-full z-10 transition-transform duration-300 ${(asset.type === "image" || asset.type === "highlight") ? `pointer-events-auto ${isHighlighterMode && setupFormat === "injury" && asset.id === "img-injury-main" ? "cursor-crosshair" : "cursor-move"} touch-none` : (isHighlighterMode && (setupFormat === "injury" || setupFormat === "pullout") && (asset.type === "title" || asset.type === "content")) ? "pointer-events-auto cursor-ns-resize touch-none" : ""}`}
                         onMouseDown={(e) => {
                           if (asset.type === "image" && asset.setupImageIndex !== undefined) {
                             handleSetupImageInnerMouseDown(e, asset.setupImageIndex, asset);
